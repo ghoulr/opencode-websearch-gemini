@@ -4,14 +4,15 @@ import type { GenerateContentResponse } from '@google/genai';
 import type { GeminiSearchResult } from './index';
 
 const mockGenerateContent = vi.fn();
+const mockGoogleGenAI = vi.fn(() => ({
+  models: {
+    generateContent: mockGenerateContent,
+  },
+}));
 
 void vi.mock('@google/genai', () => {
   return {
-    GoogleGenAI: vi.fn(() => ({
-      models: {
-        generateContent: mockGenerateContent,
-      },
-    })),
+    GoogleGenAI: mockGoogleGenAI,
   };
 });
 
@@ -138,6 +139,7 @@ describe('formatWebSearchResponse', () => {
 describe('GeminiSearchPlugin', () => {
   beforeEach(() => {
     mockGenerateContent.mockReset();
+    mockGoogleGenAI.mockClear();
     process.env.GEMINI_API_KEY = 'test-key';
   });
 
@@ -219,6 +221,66 @@ describe('GeminiSearchPlugin', () => {
     expect(result.llmContent).toContain('currently unavailable');
     expect(result.llmContent).toContain('API Failure');
   });
+
+  it('uses provider geminisearch api key when configured', async () => {
+    delete process.env.GEMINI_API_KEY;
+    mockGenerateContent.mockResolvedValue(
+      createResponse({
+        content: {
+          role: 'model',
+          parts: [{ text: 'Config search response' }],
+        },
+      })
+    );
+
+    const plugin = await createPluginHooks({
+      provider: {
+        geminisearch: {
+          options: {
+            apiKey: 'config-key',
+          },
+        },
+      },
+    });
+
+    const tool = plugin.tool?.geminisearch;
+    const context = createToolContext();
+
+    await tool!.execute({ query: 'config query' }, context);
+
+    expect(mockGoogleGenAI).toHaveBeenCalledWith({ apiKey: 'config-key' });
+  });
+
+  it('uses configured model when provided', async () => {
+    mockGenerateContent.mockResolvedValue(
+      createResponse({
+        content: {
+          role: 'model',
+          parts: [{ text: 'Model search response' }],
+        },
+      })
+    );
+
+    const plugin = await createPluginHooks({
+      provider: {
+        geminisearch: {
+          options: {
+            apiKey: 'config-key',
+            model: 'gemini-2.5-pro',
+          },
+        },
+      },
+    });
+
+    const tool = plugin.tool?.geminisearch;
+    const context = createToolContext();
+
+    await tool!.execute({ query: 'custom model query' }, context);
+
+    expect(mockGenerateContent).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'gemini-2.5-pro' })
+    );
+  });
 });
 
 type CandidateInput = NonNullable<GenerateContentResponse['candidates']>[number];
@@ -227,8 +289,20 @@ function parseResult(raw: string): GeminiSearchResult {
   return JSON.parse(raw) as unknown as GeminiSearchResult;
 }
 
-async function createPluginHooks() {
-  return GeminiSearchPlugin({} as PluginInput);
+type PluginHooks = Awaited<ReturnType<typeof GeminiSearchPlugin>>;
+
+type PluginConfigInput = PluginHooks extends {
+  config?: (input: infer T) => Promise<void>;
+}
+  ? T
+  : never;
+
+async function createPluginHooks(config?: PluginConfigInput) {
+  const plugin = await GeminiSearchPlugin({} as PluginInput);
+  if (config && plugin.config) {
+    await plugin.config(config);
+  }
+  return plugin;
 }
 
 function createResponse(candidate: CandidateInput): GenerateContentResponse {

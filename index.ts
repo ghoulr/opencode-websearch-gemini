@@ -1,7 +1,7 @@
 import { type Plugin, tool } from '@opencode-ai/plugin';
 import { GoogleGenAI, type GenerateContentResponse } from '@google/genai';
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
 const GEMINI_TOOL_DESCRIPTION =
   'Performs a web search using Google Search (via the Gemini API) and returns the results. This tool is useful for finding information on the internet based on a query.';
 
@@ -46,12 +46,30 @@ type CitationInsertion = {
 
 type GeminiWebSearchOptions = {
   apiKey: string;
+  model: string;
   query: string;
   abortSignal: AbortSignal;
 };
 
-export const GeminiSearchPlugin: Plugin = () =>
-  Promise.resolve({
+type GeminiPluginConfig = {
+  provider?: {
+    geminisearch?: {
+      options?: Record<string, unknown>;
+    };
+  };
+};
+
+export const GeminiSearchPlugin: Plugin = () => {
+  let configuredApiKey: string | undefined;
+  let configuredModel: string | undefined;
+
+  return Promise.resolve({
+    config(config: GeminiPluginConfig) {
+      const options = toOptionsRecord(config.provider?.geminisearch?.options);
+      configuredApiKey = readOptionValue(options, 'apiKey');
+      configuredModel = readOptionValue(options, 'model');
+      return Promise.resolve();
+    },
     tool: {
       geminisearch: tool({
         description: GEMINI_TOOL_DESCRIPTION,
@@ -71,7 +89,7 @@ export const GeminiSearchPlugin: Plugin = () =>
             );
           }
 
-          const apiKey = process.env.GEMINI_API_KEY;
+          const apiKey = configuredApiKey ?? process.env.GEMINI_API_KEY;
           if (!apiKey) {
             return JSON.stringify(
               buildErrorResult(
@@ -81,10 +99,13 @@ export const GeminiSearchPlugin: Plugin = () =>
             );
           }
 
+          const model = configuredModel ?? DEFAULT_GEMINI_MODEL;
+
           let response: GenerateContentResponse;
           try {
             response = await runGeminiWebSearch({
               apiKey,
+              model,
               query,
               abortSignal: context.abort,
             });
@@ -105,6 +126,7 @@ export const GeminiSearchPlugin: Plugin = () =>
       }),
     },
   });
+};
 
 export default GeminiSearchPlugin;
 
@@ -113,7 +135,7 @@ async function runGeminiWebSearch(
 ): Promise<GenerateContentResponse> {
   const client = new GoogleGenAI({ apiKey: options.apiKey });
   return client.models.generateContent({
-    model: GEMINI_MODEL,
+    model: options.model,
     contents: [
       {
         role: 'user',
@@ -266,6 +288,28 @@ function insertMarkersByUtf8Index(
   }
 
   return new TextDecoder().decode(finalBytes);
+}
+
+function toOptionsRecord(options: unknown): Record<string, unknown> | undefined {
+  if (!options || typeof options !== 'object') {
+    return undefined;
+  }
+  return options as Record<string, unknown>;
+}
+
+function readOptionValue(
+  options: Record<string, unknown> | undefined,
+  key: string
+): string | undefined {
+  if (!options) {
+    return undefined;
+  }
+  const value = options[key];
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
 }
 
 function buildErrorResult(

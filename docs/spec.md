@@ -187,7 +187,7 @@ The plugin is designed to run under Bun with ESM and TypeScript.
 - `GEMINI_API_KEY` (final name can be adjusted later)
   - Required for the `geminisearch` tool to work.
   - Should be set to a valid Gemini API key.
-  - OpenCodes `provider.gemini.options.apiKey` can also reference the same environment variable so the user only sets it once.
+  - The plugin reads this environment variable directly and does not inspect other provider settings.
 
 If the environment variable is missing, the tool should not attempt a network call and should instead return a clear error in the output.
 
@@ -204,9 +204,26 @@ In `opencode.jsonc`, users are expected to:
   }
   ```
 
-- Optionally configure a Gemini provider that also uses `GEMINI_API_KEY`, so they can use Gemini as a normal model if they want (not required for the tool itself).
-
 Once configured, any agent that has access to tools will be able to call `geminisearch` when it needs web search.
+
+Users who want to override the plugin-specific API key or default model via config can add a dedicated provider block:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-gemini-search"],
+  "provider": {
+    "geminisearch": {
+      "options": {
+        "apiKey": "{env:GEMINI_API_KEY}",
+        "model": "gemini-2.5-flash",
+      },
+    },
+  },
+}
+```
+
+The plugin reads `provider.geminisearch.options` first (it never inspects `provider.gemini` or other providers), then falls back to `GEMINI_API_KEY` and the default model when the block is absent or incomplete.
 
 ## 7. Error Handling and Limits
 

@@ -53,35 +53,32 @@ As long as the plugin is enabled and the Gemini API key is configured, any OpenC
 
 ## Gemini API key
 
-Both OpenCode and this plugin are designed to share the same Gemini API key via an environment variable.
+This plugin needs a Gemini API key and supports two ways to provide it.
 
-1. Set a Gemini API key in your shell, for example:
+1. Export an environment variable:
 
    ```bash
    export GEMINI_API_KEY="your-gemini-api-key"
    ```
 
-2. In your OpenCode config, you can configure the Gemini provider to also read from the same environment variable (optional, only needed if you want to use Gemini as a model in OpenCode):
+2. (Optional) Configure a dedicated provider block in `opencode.jsonc`:
 
    ```jsonc
    {
      "$schema": "https://opencode.ai/config.json",
+     "plugin": ["opencode-gemini-search"],
      "provider": {
-       "gemini": {
+       "geminisearch": {
          "options": {
            "apiKey": "{env:GEMINI_API_KEY}",
-         },
-         "models": {
-           "gemini-2.5-flash": {},
+           "model": "gemini-2.5-flash",
          },
        },
      },
    }
    ```
 
-The plugin will read `GEMINI_API_KEY` directly via the runtime environment.
-
-If no API key is set or the Gemini API call fails, `geminisearch` returns a clear, human-readable error message instead of silently failing.
+At runtime the plugin reads `provider.geminisearch.options.apiKey` and `model` first; if they are missing it falls back to `GEMINI_API_KEY` and the built-in default model. If no usable API key is available, `geminisearch` returns a clear error instead of calling the Gemini API.
 
 ---
 
@@ -102,7 +99,7 @@ When testing the plugin against a globally installed `opencode` CLI during devel
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["file:///absolute/path/to/opencode-gemini-search/index.ts"],
+  "plugin": ["file:///path/to/opencode-gemini-search/index.ts"],
 }
 ```
 
