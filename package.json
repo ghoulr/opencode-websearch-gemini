@@ -1,0 +1,24 @@
+{
+  "name": "opencode-gemini-search",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@typescript-eslint/eslint-plugin": "^8.48.0",
+    "eslint": "^9.39.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.6.2"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "scripts": {
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@google/genai": "^1.30.0",
+    "@opencode-ai/sdk": "^1.0.125"
+  }
+}

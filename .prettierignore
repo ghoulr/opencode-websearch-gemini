@@ -1,0 +1,5 @@
+node_modules/
+sweph/
+dist/
+coverage/
+bun.lock
