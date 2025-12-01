@@ -1,5 +1,6 @@
 {
   "name": "opencode-gemini-search",
+  "version": "0.0.1",
   "module": "index.ts",
   "type": "module",
   "private": true,
@@ -15,10 +16,14 @@
     "typescript": "^5"
   },
   "scripts": {
-    "prepare": "husky"
+    "prepare": "husky",
+    "lint": "bun eslint .",
+    "typecheck": "bunx tsc --noEmit",
+    "check": "bun run lint && bun run typecheck",
+    "test:agent": "AGENT=1 bun test index.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
-    "@opencode-ai/sdk": "^1.0.125"
+    "@opencode-ai/plugin": "^1.0.125"
   }
 }

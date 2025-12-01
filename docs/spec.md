@@ -99,31 +99,29 @@ Validation rules:
 
 ### 4.3 Output shape
 
-The tool returns a JSON object with the following fields:
+Logically, the tool produces three things:
 
-- `text: string`
-  - Markdown-formatted answer.
-  - Includes inline citation markers and a "Sources" section (when available).
-  - Example:
+- A markdown-formatted answer that:
+  - Starts with `Web search results for "<query>":`.
+  - Includes inline citation markers (for example `[1]`, `[2]`) based on grounding metadata.
+  - Optionally ends with a `Sources:` section listing numbered sources.
+- A structured list of sources derived from `groundingMetadata.groundingChunks`.
+- An optional error object if the request cannot be fulfilled.
 
-    ```text
-    Web search results for "how to use opencode":
+In the current implementation, this is surfaced at the plugin boundary as a JSON stringified object with the following fields:
 
-    Opencode is a coding assistant that integrates with your editor and terminal.[1]
-
-    Sources:
-    [1] OpenCode Docs (https://opencode.ai/docs/)
-    ```
-
-- `sources?: { title?: string; uri?: string }[]`
+- `llmContent: string`
+  - The markdown-formatted answer, including the prefix, inline citations, and optional `Sources:` section.
+- `returnDisplay: string`
+  - A short, user-facing summary of the result.
+- `sources?: GroundingChunk[]`
   - Optional. Present when Gemini returns `groundingMetadata.groundingChunks`.
-  - Each source corresponds to a numbered citation.
-
-- `error?: { message: string; code?: string }`
+  - Each entry typically has `web.title` and `web.uri`.
+- `error?: { message: string; type?: string }`
   - Optional error object.
-  - When present, `text` should contain a human-readable explanation consistent with `error.message`.
+  - When present, `llmContent` contains a human-readable explanation consistent with `error.message`.
 
-This shape keeps the contract simple for OpenCode and the calling model, while preserving structured source information.
+Agents that only need text can use `llmContent` directly. Agents that need structured information can parse the JSON, inspect `sources`, and branch on `error.type` when present.
 
 ## 5. Gemini Request Details
 

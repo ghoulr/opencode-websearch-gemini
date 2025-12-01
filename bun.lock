@@ -6,7 +6,7 @@
       "name": "opencode-gemini-search-plugin",
       "dependencies": {
         "@google/genai": "^1.30.0",
-        "@opencode-ai/sdk": "^1.0.125",
+        "@opencode-ai/plugin": "^1.0.125",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -51,6 +51,8 @@
     "@humanwhocodes/retry": ["@humanwhocodes/retry@0.4.3", "", {}, "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ=="],
 
     "@isaacs/cliui": ["@isaacs/cliui@8.0.2", "", { "dependencies": { "string-width": "^5.1.2", "string-width-cjs": "npm:string-width@^4.2.0", "strip-ansi": "^7.0.1", "strip-ansi-cjs": "npm:strip-ansi@^6.0.1", "wrap-ansi": "^8.1.0", "wrap-ansi-cjs": "npm:wrap-ansi@^7.0.0" } }, "sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA=="],
+
+    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.0.125", "", { "dependencies": { "@opencode-ai/sdk": "1.0.125", "zod": "4.1.8" } }, "sha512-fq7GwDZAjTupLTTW7wzhWDowz7b59Lohg+SITQCkVDOJ+nwK0da1DZxeV0AgrzKPbs9g4xPI4LG2SFdsPz1GdQ=="],
 
     "@opencode-ai/sdk": ["@opencode-ai/sdk@1.0.125", "", {}, "sha512-beVzY/2eYiDYexAvGUe7LKnwaG7g/dm8/AVdtXtKbY2R3chnmBUMbmpVCccMk00BNhdbOxVRo5oeFUjdNykAIQ=="],
 
@@ -377,6 +379,8 @@
     "yaml": ["yaml@2.8.2", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-mplynKqc1C2hTVYxd0PU2xQAc22TI1vShAYGksCCfxbn/dFwnHTNi1bvYsBTkhdUNtGIf5xNOg938rrSSYvS9A=="],
 
     "yocto-queue": ["yocto-queue@0.1.0", "", {}, "sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q=="],
+
+    "zod": ["zod@4.1.8", "", {}, "sha512-5R1P+WwQqmmMIEACyzSvo4JXHY5WiAFHRMg+zBZKgKS+Q1viRa0C1hmUKtHltoIFKtIdki3pRxkmpP74jnNYHQ=="],
 
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
 

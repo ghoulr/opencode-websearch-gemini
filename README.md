@@ -1,8 +1,8 @@
 # opencode-gemini-search
 
-Gemini Web Search plugin for [OpenCode](https://opencode.ai).
+Gemini Web Search plugin for [OpenCode](https://opencode.ai), inspired by [Gemini CLI](https://github.com/google-gemini/gemini-cli).
 
-This plugin exposes a Gemini-backed web search capability as an OpenCode custom tool, so any model you use in OpenCode (Anthropic, OpenAI, Gemini, etc.) can call a single tool to perform real web search and receive a cited, source-backed answer.
+This plugin exposes a Gemini-backed web search capability as an OpenCode custom tool, so your agent can call a single tool to perform google grounded web search.
 
 ---
 
@@ -10,9 +10,7 @@ This plugin exposes a Gemini-backed web search capability as an OpenCode custom 
 
 - `geminisearch` tool backed by Google Gemini web search.
 - Uses the official `@google/genai` SDK under the hood.
-- Inserts inline citation markers (`[1]`, `[2]`, ...) into the answer text.
-- Appends a "Sources" section listing titles and URLs.
-- Model-agnostic on the OpenCode side: any provider/model can invoke the tool.
+- Outputs exact result with format of Gemini CLI.
 
 For more details, see the design spec in `docs/spec.md`.
 
@@ -30,31 +28,17 @@ For more details, see the design spec in `docs/spec.md`.
 
 This mirrors the behavior of the Gemini CLI `WebSearchTool`, but packaged as a reusable OpenCode plugin.
 
+From a user perspective:
+
+- You ask your OpenCode agent a question that needs web context.
+- The agent decides to call `geminisearch` with your natural-language query.
+- Gemini performs a web search and returns an answer with inline citations and a numbered "Sources" list at the bottom.
+
 ---
 
 ## Installation
 
-This project is built with [Bun](https://bun.com).
-
-Install dependencies:
-
-```bash
-bun install
-```
-
-You can run the plugin entry point locally during development with:
-
-```bash
-bun run index.ts
-```
-
-The plugin itself is intended to be published as an npm package (for example `opencode-gemini-search`) and then added as a dependency in your OpenCode project.
-
----
-
-## OpenCode configuration
-
-After publishing and installing the plugin in your project, enable it in your `opencode.jsonc`:
+After installing the plugin from npm, enable it in your `opencode.jsonc`:
 
 ```jsonc
 {
@@ -97,7 +81,7 @@ Both OpenCode and this plugin are designed to share the same Gemini API key via 
 
 The plugin will read `GEMINI_API_KEY` directly via the runtime environment.
 
-If no API key is set, `geminisearch` will return an explicit error instead of silently failing.
+If no API key is set or the Gemini API call fails, `geminisearch` returns a clear, human-readable error message instead of silently failing.
 
 ---
 
@@ -105,32 +89,21 @@ If no API key is set, `geminisearch` will return an explicit error instead of si
 
 This repository uses Bun and TypeScript.
 
-- Package metadata and scripts are in `package.json`.
-- Linting and formatting are configured via ESLint and Prettier.
-- Husky and lint-staged are set up for pre-commit hooks.
-
-Typical development workflow:
-
 ```bash
 # Install dependencies
 bun install
 
-# Run the plugin entry point (development)
-bun run index.ts
-
-# Run lint and format (once scripts are added)
-# bun run lint
-# bun run format
+# Run tests after any change
+bun test
 ```
 
----
+When testing the plugin against a globally installed `opencode` CLI during development, you can point OpenCode at a local checkout using a `file://` URL in your `opencode.jsonc`:
 
-## Status
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["file:///absolute/path/to/opencode-gemini-search/index.ts"],
+}
+```
 
-This project is a work in progress and is not yet published to npm. The current focus is on:
-
-- Implementing the `geminisearch` tool behavior as described in `docs/spec.md`.
-- Wiring the tool into OpenCode as a plugin.
-- Hardening error handling and edge cases around grounding metadata and UTF-8 citation insertion.
-
-Contributions and feedback are welcome once the initial version is published.
+Contributions and feedback are welcome.
