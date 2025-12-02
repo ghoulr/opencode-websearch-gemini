@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'bun:test';
 import type { PluginInput } from '@opencode-ai/plugin';
+import type { Auth as ProviderAuth, Provider } from '@opencode-ai/sdk';
 import type { GenerateContentResponse } from '@google/genai';
 import type { GeminiSearchResult } from './index';
 
@@ -171,7 +172,7 @@ describe('GeminiSearchPlugin', () => {
     const result = parseResult(raw);
 
     expect(result.error?.type).toBe('MISSING_GEMINI_API_KEY');
-    expect(result.llmContent).toContain('Gemini web search is not configured');
+    expect(result.llmContent).toContain('log in to the Google provider');
     expect(mockGenerateContent).not.toHaveBeenCalled();
   });
 
@@ -222,63 +223,46 @@ describe('GeminiSearchPlugin', () => {
     expect(result.llmContent).toContain('API Failure');
   });
 
-  it('uses provider geminisearch api key when configured', async () => {
-    delete process.env.GEMINI_API_KEY;
+  it('prefers stored Google provider API key over environment variable', async () => {
+    process.env.GEMINI_API_KEY = 'env-key';
     mockGenerateContent.mockResolvedValue(
       createResponse({
         content: {
           role: 'model',
-          parts: [{ text: 'Config search response' }],
+          parts: [{ text: 'Stored key response' }],
         },
       })
     );
 
-    const plugin = await createPluginHooks({
-      provider: {
-        geminisearch: {
-          options: {
-            apiKey: 'config-key',
-          },
-        },
-      },
-    });
+    const plugin = await createPluginHooks();
+    await invokeAuthLoader(plugin, { type: 'api', key: 'stored-key' });
 
     const tool = plugin.tool?.geminisearch;
     const context = createToolContext();
 
-    await tool!.execute({ query: 'config query' }, context);
+    await tool!.execute({ query: 'stored key query' }, context);
 
-    expect(mockGoogleGenAI).toHaveBeenCalledWith({ apiKey: 'config-key' });
+    expect(mockGoogleGenAI).toHaveBeenCalledWith({ apiKey: 'stored-key' });
   });
 
-  it('uses configured model when provided', async () => {
+  it('always requests the default Gemini model', async () => {
     mockGenerateContent.mockResolvedValue(
       createResponse({
         content: {
           role: 'model',
-          parts: [{ text: 'Model search response' }],
+          parts: [{ text: 'Default model response' }],
         },
       })
     );
 
-    const plugin = await createPluginHooks({
-      provider: {
-        geminisearch: {
-          options: {
-            apiKey: 'config-key',
-            model: 'gemini-2.5-pro',
-          },
-        },
-      },
-    });
-
+    const plugin = await createPluginHooks();
     const tool = plugin.tool?.geminisearch;
     const context = createToolContext();
 
-    await tool!.execute({ query: 'custom model query' }, context);
+    await tool!.execute({ query: 'model query' }, context);
 
     expect(mockGenerateContent).toHaveBeenCalledWith(
-      expect.objectContaining({ model: 'gemini-2.5-pro' })
+      expect.objectContaining({ model: 'gemini-2.5-flash' })
     );
   });
 });
@@ -291,18 +275,15 @@ function parseResult(raw: string): GeminiSearchResult {
 
 type PluginHooks = Awaited<ReturnType<typeof GeminiSearchPlugin>>;
 
-type PluginConfigInput = PluginHooks extends {
-  config?: (input: infer T) => Promise<void>;
+async function createPluginHooks() {
+  return GeminiSearchPlugin({} as PluginInput);
 }
-  ? T
-  : never;
 
-async function createPluginHooks(config?: PluginConfigInput) {
-  const plugin = await GeminiSearchPlugin({} as PluginInput);
-  if (config && plugin.config) {
-    await plugin.config(config);
+async function invokeAuthLoader(plugin: PluginHooks, auth?: ProviderAuth) {
+  if (!plugin.auth?.loader) {
+    return;
   }
-  return plugin;
+  await plugin.auth.loader(() => Promise.resolve(auth as ProviderAuth), {} as Provider);
 }
 
 function createResponse(candidate: CandidateInput): GenerateContentResponse {

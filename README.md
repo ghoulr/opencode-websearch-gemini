@@ -10,6 +10,7 @@ This plugin exposes a Gemini-backed web search capability as an OpenCode custom 
 
 - `geminisearch` tool backed by Google Gemini web search.
 - Uses the official `@google/genai` SDK under the hood.
+- Always calls the `gemini-2.5-flash` model with the `googleSearch` tool enabled.
 - Outputs exact result with format of Gemini CLI.
 
 For more details, see the design spec in `docs/spec.md`.
@@ -20,7 +21,7 @@ For more details, see the design spec in `docs/spec.md`.
 
 - The plugin registers a custom tool named `geminisearch` with OpenCode.
 - When an agent calls this tool with a `query`, the plugin:
-  - Reads a Gemini API key from the environment (for example `GEMINI_API_KEY`).
+  - Resolves a Gemini API key by first from `opencode auth login` and falling back to `GEMINI_API_KEY` env.
   - Uses `@google/genai` to call a Gemini model configured with the `googleSearch` tool.
   - Takes the returned answer text and grounding metadata.
   - Inserts citation markers into the text and builds a sources list.
@@ -53,32 +54,16 @@ As long as the plugin is enabled and the Gemini API key is configured, any OpenC
 
 ## Gemini API key
 
-This plugin needs a Gemini API key and supports two ways to provide it.
+This plugin needs a Gemini API key and resolves it in this order:
 
-1. Export an environment variable:
+1. **OpenCode auth store**: run `opencode auth login`, select the Google provider, and input your Gemini API key when prompted.
+2. **Environment fallback**: if you prefer not to store the key, export it as `GEMINI_API_KEY`:
 
    ```bash
    export GEMINI_API_KEY="your-gemini-api-key"
    ```
 
-2. (Optional) Configure a dedicated provider block in `opencode.jsonc`:
-
-   ```jsonc
-   {
-     "$schema": "https://opencode.ai/config.json",
-     "plugin": ["opencode-gemini-search"],
-     "provider": {
-       "geminisearch": {
-         "options": {
-           "apiKey": "{env:GEMINI_API_KEY}",
-           "model": "gemini-2.5-flash",
-         },
-       },
-     },
-   }
-   ```
-
-At runtime the plugin reads `provider.geminisearch.options.apiKey` and `model` first; if they are missing it falls back to `GEMINI_API_KEY` and the built-in default model. If no usable API key is available, `geminisearch` returns a clear error instead of calling the Gemini API.
+If neither source is available, `geminisearch` returns a `MISSING_GEMINI_API_KEY` error instead of calling the Gemini API.
 
 ---
 

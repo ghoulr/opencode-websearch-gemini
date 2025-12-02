@@ -1,7 +1,9 @@
 import { type Plugin, tool } from '@opencode-ai/plugin';
+import type { Auth as ProviderAuth } from '@opencode-ai/sdk';
 import { GoogleGenAI, type GenerateContentResponse } from '@google/genai';
 
 const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_PROVIDER_ID = 'google';
 const GEMINI_TOOL_DESCRIPTION =
   'Performs a web search using Google Search (via the Gemini API) and returns the results. This tool is useful for finding information on the internet based on a query.';
 
@@ -51,24 +53,27 @@ type GeminiWebSearchOptions = {
   abortSignal: AbortSignal;
 };
 
-type GeminiPluginConfig = {
-  provider?: {
-    geminisearch?: {
-      options?: Record<string, unknown>;
-    };
-  };
-};
-
 export const GeminiSearchPlugin: Plugin = () => {
-  let configuredApiKey: string | undefined;
-  let configuredModel: string | undefined;
+  let googleApiKeyFromAuth: string | undefined;
 
   return Promise.resolve({
-    config(config: GeminiPluginConfig) {
-      const options = toOptionsRecord(config.provider?.geminisearch?.options);
-      configuredApiKey = readOptionValue(options, 'apiKey');
-      configuredModel = readOptionValue(options, 'model');
-      return Promise.resolve();
+    auth: {
+      provider: GEMINI_PROVIDER_ID,
+      async loader(getAuth) {
+        try {
+          const authDetails = await getAuth();
+          googleApiKeyFromAuth = extractApiKey(authDetails);
+        } catch {
+          googleApiKeyFromAuth = undefined;
+        }
+        return {};
+      },
+      methods: [
+        {
+          type: 'api',
+          label: 'Google API key',
+        },
+      ],
     },
     tool: {
       geminisearch: tool({
@@ -89,23 +94,21 @@ export const GeminiSearchPlugin: Plugin = () => {
             );
           }
 
-          const apiKey = configuredApiKey ?? process.env.GEMINI_API_KEY;
+          const apiKey = resolveGeminiApiKey(googleApiKeyFromAuth);
           if (!apiKey) {
             return JSON.stringify(
               buildErrorResult(
-                'Gemini web search is not configured. Please set GEMINI_API_KEY.',
+                'Gemini web search is not configured. Please log in to the Google provider via `opencode auth login` or set GEMINI_API_KEY.',
                 'MISSING_GEMINI_API_KEY'
               )
             );
           }
 
-          const model = configuredModel ?? DEFAULT_GEMINI_MODEL;
-
           let response: GenerateContentResponse;
           try {
             response = await runGeminiWebSearch({
               apiKey,
-              model,
+              model: DEFAULT_GEMINI_MODEL,
               query,
               abortSignal: context.abort,
             });
@@ -290,26 +293,21 @@ function insertMarkersByUtf8Index(
   return new TextDecoder().decode(finalBytes);
 }
 
-function toOptionsRecord(options: unknown): Record<string, unknown> | undefined {
-  if (!options || typeof options !== 'object') {
-    return undefined;
+function resolveGeminiApiKey(storedKey?: string): string | undefined {
+  const normalizedStored = storedKey?.trim();
+  if (normalizedStored) {
+    return normalizedStored;
   }
-  return options as Record<string, unknown>;
+  const envKey = process.env.GEMINI_API_KEY?.trim();
+  return envKey && envKey !== '' ? envKey : undefined;
 }
 
-function readOptionValue(
-  options: Record<string, unknown> | undefined,
-  key: string
-): string | undefined {
-  if (!options) {
+function extractApiKey(authDetails?: ProviderAuth | null): string | undefined {
+  if (!authDetails || authDetails.type !== 'api') {
     return undefined;
   }
-  const value = options[key];
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed === '' ? undefined : trimmed;
+  const normalized = authDetails.key.trim();
+  return normalized === '' ? undefined : normalized;
 }
 
 function buildErrorResult(

@@ -17,7 +17,7 @@ The goal is to: "Bring Gemini CLI style web search into OpenCode as a first-clas
 ### 2.1 Goals
 
 - Provide a reusable `geminisearch` tool within OpenCode that performs real web search via Gemini.
-- Reuse a single Gemini API key between OpenCode and this plugin via environment variables.
+- Reuse a single Gemini API key between OpenCode and this plugin by reading OpenCodes stored Google provider credential first and falling back to environment variables.
 - Match the user-facing behavior of the Gemini CLI `WebSearchTool` as closely as reasonable:
   - Use Geminis web search capability (`googleSearch` tool).
   - Insert citation markers (`[1]`, `[2]`, ...) into the answer text based on grounding metadata.
@@ -28,7 +28,6 @@ The goal is to: "Bring Gemini CLI style web search into OpenCode as a first-clas
 
 - Do not implement a general-purpose search aggregation layer or support arbitrary search providers.
 - Do not re-implement the entire Gemini CLI or its configuration system.
-- Do not manage or expose OpenCodes stored credentials; the plugin only reads environment variables.
 - Do not modify OpenCode core; the plugin should work as a normal third-party plugin.
 
 ## 3. Architecture
@@ -37,7 +36,10 @@ The goal is to: "Bring Gemini CLI style web search into OpenCode as a first-clas
 
 1. The OpenCode agent decides to call the `geminisearch` tool with a query string.
 2. OpenCode invokes the plugin tool handler.
-3. The plugin reads the Gemini API key from a shared environment variable (for example, `GEMINI_API_KEY`).
+3. The plugin resolves the Gemini API key in priority order:
+   1. OpenCodes stored credential for the `google` provider (populated via `opencode auth login`).
+   2. The `GEMINI_API_KEY` environment variable.
+      If no key can be resolved, the tool returns an error and does not call Gemini.
 4. The plugin constructs a `@google/genai` client with this API key.
 5. The plugin calls a Gemini generative model configured with the `googleSearch` tool enabled.
 6. Gemini performs web search and returns:
@@ -52,6 +54,7 @@ The goal is to: "Bring Gemini CLI style web search into OpenCode as a first-clas
 
 - **Plugin entry point (`index.ts`)**
   - Exports a `Plugin` typed function (from `@opencode-ai/plugin`).
+  - Registers an auth hook for the Google provider so it can read the stored API key without modifying login flows.
   - Registers the `geminisearch` custom tool.
   - Does not perform any work at module load time besides lightweight initialization.
 
@@ -127,10 +130,10 @@ Agents that only need text can use `llmContent` directly. Agents that need struc
 
 ### 5.1 Model and tools
 
-To match the Gemini CLI `WebSearchTool` behavior, the plugin should:
+To match the Gemini CLI `WebSearchTool` behavior, the initial implementation always:
 
-- Use a Gemini model from the 2.5 flash family, e.g. `gemini-2.5-flash`.
-- Enable the `googleSearch` tool.
+- Uses the `gemini-2.5-flash` model.
+- Enables the `googleSearch` tool.
 
 In `@google/genai`, this looks like:
 
@@ -185,11 +188,10 @@ The plugin is designed to run under Bun with ESM and TypeScript.
 ### 6.2 Environment variables
 
 - `GEMINI_API_KEY` (final name can be adjusted later)
-  - Required for the `geminisearch` tool to work.
-  - Should be set to a valid Gemini API key.
-  - The plugin reads this environment variable directly and does not inspect other provider settings.
+  - Used as a fallback when OpenCodes stored Google credential does not contain an API key.
+  - Should be set to a valid Gemini API key if the user prefers not to store it via `opencode auth login`.
 
-If the environment variable is missing, the tool should not attempt a network call and should instead return a clear error in the output.
+When neither a stored credential nor the environment variable is available, the tool should not attempt a network call and should instead return a clear error in the output.
 
 ### 6.3 OpenCode configuration
 
@@ -206,24 +208,7 @@ In `opencode.jsonc`, users are expected to:
 
 Once configured, any agent that has access to tools will be able to call `geminisearch` when it needs web search.
 
-Users who want to override the plugin-specific API key or default model via config can add a dedicated provider block:
-
-```jsonc
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-gemini-search"],
-  "provider": {
-    "geminisearch": {
-      "options": {
-        "apiKey": "{env:GEMINI_API_KEY}",
-        "model": "gemini-2.5-flash",
-      },
-    },
-  },
-}
-```
-
-The plugin reads `provider.geminisearch.options` first (it never inspects `provider.gemini` or other providers), then falls back to `GEMINI_API_KEY` and the default model when the block is absent or incomplete.
+After enabling the plugin, users complete setup by running `opencode auth login`, selecting the Google provider, and entering their Gemini API key. The credential is stored by OpenCode and will be reused by this plugin. Using `GEMINI_API_KEY` is optional and only needed if users choose not to store the key via the auth workflow.
 
 ## 7. Error Handling and Limits
 
