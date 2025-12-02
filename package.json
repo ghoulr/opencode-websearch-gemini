@@ -1,6 +1,6 @@
 {
   "name": "opencode-websearch-gemini",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "An OpenCode plugin that provides Gemini CLI-style web search via the Gemini API.",
   "module": "index.ts",
   "type": "module",

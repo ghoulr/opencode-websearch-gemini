@@ -41,7 +41,7 @@ Add `opencode-websearch-gemini` to your `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-websearch-gemini@0.9.1"]
+  "plugin": ["opencode-websearch-gemini@0.9.2"]
 }
 ```
 

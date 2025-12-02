@@ -163,6 +163,24 @@ describe('WebsearchGeminiPlugin', () => {
     expect(mockGenerateContent).not.toHaveBeenCalled();
   });
 
+  it('rejects extra arguments', async () => {
+    const plugin = await createPluginHooks();
+    const tool = plugin.tool?.websearch_gemini;
+    const context = createToolContext();
+
+    const raw = await tool!.execute(
+      { query: 'sample', format: 'markdown' } as never,
+      context
+    );
+    const result = parseResult(raw);
+
+    expect(result.error?.type).toBe('INVALID_TOOL_ARGUMENTS');
+    expect(result.llmContent).toContain(
+      "Unknown argument(s): format, only 'query' supported"
+    );
+    expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+
   it('returns successful search results', async () => {
     mockGenerateContent.mockResolvedValue(
       createResponse({
