@@ -1,6 +1,6 @@
 {
   "name": "opencode-websearch-gemini",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "An OpenCode plugin that provides Gemini CLI-style web search via the Gemini API.",
   "module": "index.ts",
   "type": "module",
@@ -9,7 +9,7 @@
     "type": "git",
     "url": "https://github.com/ghoulr/opencode-websearch-gemini"
   },
-  "homepage": "https://github.com/ghoulr/opencode-websearch-gemini",
+  "homepage": "https://github.com/ghoulr/opencode-websearch-gemini#readme",
   "bugs": {
     "url": "https://github.com/ghoulr/opencode-websearch-gemini/issues"
   },
@@ -19,6 +19,11 @@
     "gemini-cli",
     "websearch",
     "plugin"
+  ],
+  "files": [
+    "index.ts",
+    "README.md",
+    "LICENSE"
   ],
   "devDependencies": {
     "@types/bun": "latest",
