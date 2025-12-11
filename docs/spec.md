@@ -23,6 +23,8 @@ The goal is to let OpenCode agents call a single-purpose tool and always receive
 
 ## Common Tool Contract
 
+> Note: This spec describes recommended shapes and behaviors, not a fixed wire protocol. Concrete API endpoints and headers are examples and may vary between implementations, as long as the `WebSearchResult` contract is preserved.
+
 ### Tool shape
 
 Each provider-specific tool follows this logical contract:
@@ -133,26 +135,27 @@ Example error shape:
 
 ### Auth resolution
 
-1. Try OpenCode provider auth for `provider: "google"` (type `api` key).
-2. If neither provider auth nor `process.env.GEMINI_API_KEY` is available, return `MISSING_GEMINI_API_KEY` error.
-
-Error shape:
-
-```ts
-error.type === 'MISSING_GEMINI_API_KEY';
-```
+- Use the OpenCode `google` provider auth as the primary source of credentials. Implementations MAY support:
+  - `type: "oauth"` (for example via `opencode-gemini-auth`), using the stored access token and any associated project metadata.
+  - `type: "api"`, using an API key stored in the provider configuration.
+- Implementations MAY optionally fall back to an environment variable such as `GEMINI_API_KEY` when no provider API key is configured.
+- If no valid OAuth session or API key is available, the tool returns an auth error (for example `INVALID_AUTH` or `MISSING_GEMINI_API_KEY`), with a descriptive message explaining how to configure Gemini auth.
 
 ### Underlying API call
 
-- Transport: plain HTTP to the Gemini Generative Language API.
-- Endpoint: `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`.
+- Transport: plain HTTP to Gemini APIs (for example, the Generative Language API and/or the Gemini Code Assist backend).
+- Endpoints: chosen by the implementation. For example, API-key flows might call a Generative Language `generateContent` endpoint, while OAuth flows might call a Code Assist `generateContent` endpoint that wraps the same logical request.
 - Model:
   - Default is `gemini-2.5-flash`.
   - If `provider.google.options.websearch_grounded.model` is a non-empty string, that value overrides the default.
-- Request headers (API-key based flow):
+- Request headers (API-key based flow, example):
   - `x-goog-api-key: <GEMINI_API_KEY or provider api key>`
   - `Content-Type: application/json`
-- Request body (simplified shape):
+- Request headers (OAuth-based flow, example):
+  - `Authorization: Bearer <accessTokenFromAuth>`
+  - `Content-Type: application/json`
+  - Additional metadata headers as required by Gemini (for example `User-Agent`, `X-Goog-Api-Client`, `Client-Metadata`, and any project-scoping headers such as `x-goog-user-project` or a `project` field in the request body).
+- Request body (simplified logical shape, independent of the exact endpoint):
 
   ```jsonc
   {
@@ -324,7 +327,7 @@ error.type === 'MISSING_OPENROUTER_API_KEY';
 
 ### Underlying API call
 
-- Endpoint: `https://openrouter.ai/api/v1/responses`.
+- Endpoint: an OpenRouter Responses API endpoint, typically `https://openrouter.ai/api/v1/responses`.
 - Auth header: `Authorization: Bearer ${OPENROUTER_API_KEY}`.
 - Content-Type: `application/json`.
 - Basic request body for simple queries:

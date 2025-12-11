@@ -18,7 +18,33 @@ type GeminiWebSearchOptions = {
   abortSignal: AbortSignal;
 };
 
+export type GeminiClientConfig =
+  | {
+      mode: 'api';
+      apiKey: string;
+      model: string;
+    }
+  | {
+      mode: 'oauth';
+      accessToken: string;
+      model: string;
+      projectId?: string;
+    };
+
+export interface WebSearchClient {
+  search(query: string, abortSignal: AbortSignal): Promise<WebSearchResult>;
+}
+
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+const GEMINI_CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
+const GEMINI_CODE_ASSIST_GENERATE_PATH = '/v1internal:generateContent';
+
+const CODE_ASSIST_HEADERS = {
+  'User-Agent': 'google-api-nodejs-client/9.15.1',
+  'X-Goog-Api-Client': 'gl-node/22.17.0',
+  'Client-Metadata':
+    'ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI',
+} as const;
 
 function buildGeminiUrl(model: string): string {
   const encoded = encodeURIComponent(model);
@@ -33,6 +59,9 @@ export async function runGeminiWebSearch(
     headers: {
       'Content-Type': 'application/json',
       'x-goog-api-key': options.apiKey,
+      'User-Agent': CODE_ASSIST_HEADERS['User-Agent'],
+      'X-Goog-Api-Client': CODE_ASSIST_HEADERS['X-Goog-Api-Client'],
+      'Client-Metadata': CODE_ASSIST_HEADERS['Client-Metadata'],
     },
     body: JSON.stringify({
       contents: [
@@ -47,25 +76,7 @@ export async function runGeminiWebSearch(
   });
 
   if (!response.ok) {
-    let message: string | undefined;
-    try {
-      const errorBody = (await response.json()) as {
-        error?: { message?: string };
-      };
-      message = errorBody.error?.message;
-    } catch {
-      // ignore
-    }
-
-    if (!message) {
-      try {
-        const fallbackText = await response.text();
-        message = fallbackText || undefined;
-      } catch {
-        // ignore
-      }
-    }
-
+    const message = await readErrorMessage(response);
     throw new Error(message ?? `Request failed with status ${response.status}`);
   }
 
@@ -208,6 +219,229 @@ function insertMarkersByUtf8Index(
   }
 
   return new TextDecoder().decode(finalBytes);
+}
+
+class GeminiApiKeyClient implements WebSearchClient {
+  private readonly apiKey: string;
+  private readonly model: string;
+
+  constructor(apiKey: string, model: string) {
+    const normalizedKey = apiKey.trim();
+    const normalizedModel = model.trim();
+    if (!normalizedKey || !normalizedModel) {
+      throw new Error('Invalid Gemini API configuration');
+    }
+    this.apiKey = normalizedKey;
+    this.model = normalizedModel;
+  }
+
+  async search(query: string, abortSignal: AbortSignal): Promise<WebSearchResult> {
+    const normalizedQuery = query.trim();
+    const response = await runGeminiWebSearch({
+      apiKey: this.apiKey,
+      model: this.model,
+      query: normalizedQuery,
+      abortSignal,
+    });
+    return formatWebSearchResponse(response, normalizedQuery);
+  }
+}
+
+class GeminiOAuthClient implements WebSearchClient {
+  private readonly accessToken: string;
+  private readonly model: string;
+  private readonly projectId?: string;
+
+  constructor(accessToken: string, model: string, projectId?: string) {
+    const normalizedToken = accessToken.trim();
+    const normalizedModel = model.trim();
+    const normalizedProject = projectId?.trim();
+    if (!normalizedToken || !normalizedModel) {
+      throw new Error('Invalid Gemini OAuth configuration');
+    }
+    this.accessToken = normalizedToken;
+    this.model = normalizedModel;
+    this.projectId =
+      normalizedProject && normalizedProject !== '' ? normalizedProject : undefined;
+  }
+
+  async search(query: string, abortSignal: AbortSignal): Promise<WebSearchResult> {
+    const normalizedQuery = query.trim();
+    const url = `${GEMINI_CODE_ASSIST_ENDPOINT}${GEMINI_CODE_ASSIST_GENERATE_PATH}`;
+
+    const requestPayload: Record<string, unknown> = {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: normalizedQuery }],
+        },
+      ],
+      tools: [{ googleSearch: {} }],
+    };
+
+    const body: Record<string, unknown> = {
+      model: this.model,
+      request: requestPayload,
+    };
+
+    if (this.projectId) {
+      body.project = this.projectId;
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${this.accessToken}`,
+      'User-Agent': CODE_ASSIST_HEADERS['User-Agent'],
+      'X-Goog-Api-Client': CODE_ASSIST_HEADERS['X-Goog-Api-Client'],
+      'Client-Metadata': CODE_ASSIST_HEADERS['Client-Metadata'],
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: abortSignal,
+    });
+
+    if (!response.ok) {
+      const message = await readErrorMessage(response);
+      throw new Error(message ?? `Request failed with status ${response.status}`);
+    }
+
+    const text = await response.text();
+    if (!text) {
+      throw new Error('Empty response from Gemini Code Assist');
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text) as unknown;
+    } catch {
+      throw new Error('Invalid JSON response from Gemini Code Assist');
+    }
+
+    const effectiveResponse = extractGenerateContentResponse(parsed);
+    if (!effectiveResponse) {
+      throw new Error(
+        'Gemini Code Assist response did not include a valid response payload'
+      );
+    }
+
+    return formatWebSearchResponse(effectiveResponse, normalizedQuery);
+  }
+}
+
+function extractGenerateContentResponse(
+  payload: unknown
+): GeminiGenerateContentResponse | undefined {
+  const candidateObject = (() => {
+    if (Array.isArray(payload)) {
+      for (const item of payload) {
+        if (item && typeof item === 'object') {
+          return item as Record<string, unknown>;
+        }
+      }
+      return undefined;
+    }
+    if (payload && typeof payload === 'object') {
+      return payload as Record<string, unknown>;
+    }
+    return undefined;
+  })();
+
+  if (!candidateObject) {
+    return undefined;
+  }
+
+  const withResponse = candidateObject as {
+    response?: unknown;
+    candidates?: unknown;
+  };
+
+  if (withResponse.response && typeof withResponse.response === 'object') {
+    return withResponse.response as GeminiGenerateContentResponse;
+  }
+
+  if (withResponse.candidates) {
+    return candidateObject as unknown as GeminiGenerateContentResponse;
+  }
+
+  return undefined;
+}
+
+async function readErrorMessage(response: Response): Promise<string | undefined> {
+  try {
+    const errorBody = (await response.json()) as {
+      error?: { message?: string };
+    };
+    if (errorBody.error?.message && typeof errorBody.error.message === 'string') {
+      return errorBody.error.message;
+    }
+  } catch {}
+
+  try {
+    const fallbackText = await response.text();
+    return fallbackText || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function createGeminiWebSearchClient(config: GeminiClientConfig): WebSearchClient {
+  if (config.mode === 'api') {
+    return new GeminiApiKeyClient(config.apiKey, config.model);
+  }
+
+  return new GeminiOAuthClient(config.accessToken, config.model, config.projectId);
+}
+
+export function createWebSearchClientForGoogle(
+  authDetails: ProviderAuth,
+  model: string
+): WebSearchClient {
+  if (authDetails.type === 'api') {
+    const apiKey = extractApiKey(authDetails);
+    if (!apiKey) {
+      throw new Error('Missing Gemini API key');
+    }
+    return createGeminiWebSearchClient({
+      mode: 'api',
+      apiKey,
+      model,
+    });
+  }
+
+  if (authDetails.type === 'oauth') {
+    const oauthAuth = authDetails as {
+      type: 'oauth';
+      access?: string;
+      refresh?: string;
+    };
+    const accessToken = oauthAuth.access?.trim() ?? '';
+    if (!accessToken) {
+      throw new Error('Missing Gemini OAuth access token');
+    }
+
+    const refreshValue = oauthAuth.refresh;
+    let projectId: string | undefined;
+    if (refreshValue) {
+      const parts = refreshValue.split('|');
+      if (parts.length >= 3 && parts[2] && parts[2].trim() !== '') {
+        projectId = parts[2].trim();
+      } else if (parts.length >= 2 && parts[1] && parts[1].trim() !== '') {
+        projectId = parts[1].trim();
+      }
+    }
+
+    return createGeminiWebSearchClient({
+      mode: 'oauth',
+      accessToken,
+      model,
+      projectId,
+    });
+  }
+
+  throw new Error('Unsupported auth type for Gemini web search');
 }
 
 export function resolveGeminiApiKey(storedKey?: string): string | undefined {

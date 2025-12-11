@@ -1,12 +1,10 @@
 import { type Plugin, tool } from '@opencode-ai/plugin';
-import type { Config } from '@opencode-ai/sdk';
+import type { Auth as ProviderAuth, Config } from '@opencode-ai/sdk';
 
 import {
   buildErrorResult,
-  extractApiKey,
-  formatWebSearchResponse,
-  resolveGeminiApiKey,
-  runGeminiWebSearch,
+  createWebSearchClientForGoogle,
+  type WebSearchClient,
 } from '@/gemini';
 import { WEBSEARCH_ERROR, WEBSEARCH_ERROR_MESSAGES } from '@/types';
 
@@ -26,8 +24,9 @@ const WEBSEARCH_ALLOWED_KEYS_DESCRIPTION = Array.from(WEBSEARCH_ALLOWED_KEYS)
   .join(', ');
 
 export const WebsearchGeminiPlugin: Plugin = () => {
-  let googleApiKeyFromAuth: string | undefined;
+  let providerAuth: ProviderAuth | undefined;
   let geminiWebsearchModel: string | undefined;
+  let websearchClient: WebSearchClient | undefined;
 
   function parseWebsearchModel(config: Config): string | undefined {
     const providerConfig = config.provider?.[GEMINI_PROVIDER_ID];
@@ -65,9 +64,11 @@ export const WebsearchGeminiPlugin: Plugin = () => {
       async loader(getAuth) {
         try {
           const authDetails = await getAuth();
-          googleApiKeyFromAuth = extractApiKey(authDetails);
+          providerAuth = authDetails;
+          websearchClient = undefined;
         } catch {
-          googleApiKeyFromAuth = undefined;
+          providerAuth = undefined;
+          websearchClient = undefined;
         }
         return {};
       },
@@ -80,6 +81,7 @@ export const WebsearchGeminiPlugin: Plugin = () => {
     },
     config: (config) => {
       geminiWebsearchModel = parseWebsearchModel(config);
+      websearchClient = undefined;
       return Promise.resolve();
     },
     tool: {
@@ -111,7 +113,8 @@ export const WebsearchGeminiPlugin: Plugin = () => {
             );
           }
 
-          if (!geminiWebsearchModel) {
+          const model = geminiWebsearchModel;
+          if (!model) {
             return JSON.stringify(
               buildErrorResult(
                 WEBSEARCH_ERROR_MESSAGES.invalidModel,
@@ -121,25 +124,34 @@ export const WebsearchGeminiPlugin: Plugin = () => {
             );
           }
 
-          const apiKey = resolveGeminiApiKey(googleApiKeyFromAuth);
-          if (!apiKey) {
+          const authDetails = providerAuth;
+          if (!authDetails) {
             return JSON.stringify(
               buildErrorResult(
                 WEBSEARCH_ERROR_MESSAGES.invalidAuth,
                 WEBSEARCH_ERROR.invalidAuth,
-                'Authenticate the Google provider via `opencode auth login` with a Gemini API key.'
+                'Authenticate the Google provider via `opencode auth login` using OAuth or an API key.'
               )
             );
           }
 
-          let response;
+          if (!websearchClient) {
+            try {
+              websearchClient = createWebSearchClientForGoogle(authDetails, model);
+            } catch {
+              return JSON.stringify(
+                buildErrorResult(
+                  WEBSEARCH_ERROR_MESSAGES.invalidAuth,
+                  WEBSEARCH_ERROR.invalidAuth,
+                  'Authenticate the Google provider via `opencode auth login` using OAuth or an API key.'
+                )
+              );
+            }
+          }
+
           try {
-            response = await runGeminiWebSearch({
-              apiKey,
-              model: geminiWebsearchModel,
-              query,
-              abortSignal: context.abort,
-            });
+            const result = await websearchClient.search(query, context.abort);
+            return JSON.stringify(result);
           } catch (error) {
             console.warn('Gemini web search failed.', error);
             const message = error instanceof Error ? error.message : String(error);
@@ -151,9 +163,6 @@ export const WebsearchGeminiPlugin: Plugin = () => {
               )
             );
           }
-
-          const formatted = formatWebSearchResponse(response, query);
-          return JSON.stringify(formatted);
         },
       }),
     },
