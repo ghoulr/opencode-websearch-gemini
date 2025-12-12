@@ -298,9 +298,9 @@ async function main() {
     await hook.config?.(config);
   }
 
-  const tool = findTool(hooks, 'websearch_grounded');
+  const tool = findTool(hooks, 'websearch_cited');
   if (!tool) {
-    throw new Error('Tool "websearch_grounded" not registered');
+    throw new Error('Tool "websearch_cited" not registered');
   }
 
   const context = createToolContext();

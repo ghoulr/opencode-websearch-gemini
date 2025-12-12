@@ -8,8 +8,8 @@ import { type GetAuth } from '@/types';
 const GOOGLE_PROVIDER_ID = 'google';
 const OPENAI_PROVIDER_ID = 'openai';
 
-const GROUNDED_SEARCH_TOOL_DESCRIPTION =
-  'Performs a web search with LLM-grounded results and citations. This tool is useful for finding information on the internet with reliable sources and inline references.';
+const CITED_SEARCH_TOOL_DESCRIPTION =
+  'Performs a web search and returns results with inline citations and a Sources list when available.';
 
 const WEBSEARCH_ARGS = {
   query: tool.schema.string().describe('The natural-language web search query.'),
@@ -42,7 +42,7 @@ type SelectedWebsearchConfig = {
   model: string;
 };
 
-function findFirstWebsearchGroundedConfig(
+function findFirstWebsearchCitedConfig(
   config: Config
 ): SelectedWebsearchConfig | undefined {
   const providers = config.provider;
@@ -60,20 +60,20 @@ function findFirstWebsearchGroundedConfig(
       continue;
     }
 
-    if (!('websearch_grounded' in options)) {
+    if (!('websearch_cited' in options)) {
       continue;
     }
 
-    const grounded = options.websearch_grounded;
-    if (!isRecord(grounded)) {
+    const cited = options.websearch_cited;
+    if (!isRecord(cited)) {
       throw new Error(
-        `Invalid websearch_grounded configuration for provider "${providerID}".`
+        `Invalid websearch_cited configuration for provider "${providerID}".`
       );
     }
 
-    const candidate = grounded.model;
+    const candidate = cited.model;
     if (typeof candidate !== 'string' || candidate.trim() === '') {
-      throw new Error(`Missing websearch_grounded model for provider "${providerID}".`);
+      throw new Error(`Missing websearch_cited model for provider "${providerID}".`);
     }
 
     return { providerID, model: candidate.trim() };
@@ -148,14 +148,14 @@ function parseOpenAIOptions(
   return result;
 }
 
-const WebsearchGroundedPlugin: Plugin = () => {
+const WebsearchCitedPlugin: Plugin = () => {
   let selectedProvider: SelectedProviderID | undefined;
   let selectedModel: string | undefined;
   let openaiConfig: OpenAIWebsearchConfig = {};
 
   return Promise.resolve({
     config: (config) => {
-      const selected = findFirstWebsearchGroundedConfig(config);
+      const selected = findFirstWebsearchCitedConfig(config);
       if (!selected) {
         throw new Error('Missing web search model configuration.');
       }
@@ -165,7 +165,7 @@ const WebsearchGroundedPlugin: Plugin = () => {
         selected.providerID !== OPENAI_PROVIDER_ID
       ) {
         throw new Error(
-          `Unsupported provider "${selected.providerID}" for websearch_grounded.`
+          `Unsupported provider "${selected.providerID}" for websearch_cited.`
         );
       }
 
@@ -180,8 +180,8 @@ const WebsearchGroundedPlugin: Plugin = () => {
       return Promise.resolve();
     },
     tool: {
-      websearch_grounded: tool({
-        description: GROUNDED_SEARCH_TOOL_DESCRIPTION,
+      websearch_cited: tool({
+        description: CITED_SEARCH_TOOL_DESCRIPTION,
         args: WEBSEARCH_ARGS,
         async execute(args, context) {
           const argKeys = Object.keys(args ?? {});
@@ -230,7 +230,7 @@ const WebsearchGroundedPlugin: Plugin = () => {
   });
 };
 
-export const WebsearchGroundedGooglePlugin: Plugin = () => {
+export const WebsearchCitedGooglePlugin: Plugin = () => {
   return Promise.resolve({
     auth: {
       provider: GOOGLE_PROVIDER_ID,
@@ -248,7 +248,7 @@ export const WebsearchGroundedGooglePlugin: Plugin = () => {
   });
 };
 
-export const WebsearchGroundedOpenAIPlugin: Plugin = () => {
+export const WebsearchCitedOpenAIPlugin: Plugin = () => {
   return Promise.resolve({
     auth: {
       provider: OPENAI_PROVIDER_ID,
@@ -266,4 +266,4 @@ export const WebsearchGroundedOpenAIPlugin: Plugin = () => {
   });
 };
 
-export default WebsearchGroundedPlugin;
+export default WebsearchCitedPlugin;

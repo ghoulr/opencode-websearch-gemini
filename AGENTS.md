@@ -10,15 +10,15 @@ Default to using Bun instead of Node.js
 
 ## Project scope
 
-This repository contains an OpenCode plugin that exposes an LLM-grounded web search capability as a custom tool
+This repository contains an OpenCode plugin that exposes a web search capability as a custom tool
 
-- The primary tool is `websearch_grounded`
+- The primary tool is `websearch_cited`
 - The tool calls provider web search endpoints directly over HTTP
 - The tool returns markdown output with inline citations and a Sources list when available
 
 ## Coding and implementation
 
-- Keep the implementation minimal and focused on the `websearch_grounded` tool
+- Keep the implementation minimal and focused on the `websearch_cited` tool
 - Prefer small, single-purpose functions, use aliases when import
 - Since we are building a plugin, minimal dependencies will be a better design choice
 - Let errors propagate instead of swallowing them, follow the `fast fail` principal, let callers to deal with the error

@@ -252,7 +252,7 @@ class GeminiApiKeyClient implements WebSearchClient {
     const normalizedKey = apiKey.trim();
     const normalizedModel = model.trim();
     if (!normalizedKey || !normalizedModel) {
-      throw new Error('Invalid Gemini API configuration');
+      throw new Error('Invalid Google API configuration');
     }
     this.apiKey = normalizedKey;
     this.model = normalizedModel;
@@ -280,7 +280,7 @@ class GeminiOAuthClient implements WebSearchClient {
     const normalizedModel = model.trim();
     const normalizedProject = projectId?.trim();
     if (!normalizedToken || !normalizedModel) {
-      throw new Error('Invalid Gemini OAuth configuration');
+      throw new Error('Invalid Google OAuth configuration');
     }
     this.accessToken = normalizedToken;
     this.model = normalizedModel;
@@ -333,20 +333,20 @@ class GeminiOAuthClient implements WebSearchClient {
 
     const text = await response.text();
     if (!text) {
-      throw new Error('Empty response from Gemini Code Assist');
+      throw new Error('Empty response from Google Code Assist');
     }
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(text) as unknown;
     } catch {
-      throw new Error('Invalid JSON response from Gemini Code Assist');
+      throw new Error('Invalid JSON response from Google Code Assist');
     }
 
     const effectiveResponse = extractGenerateContentResponse(parsed);
     if (!effectiveResponse) {
       throw new Error(
-        'Gemini Code Assist response did not include a valid response payload'
+        'Google Code Assist response did not include a valid response payload'
       );
     }
 
@@ -425,7 +425,7 @@ function createWebSearchClientForGoogle(
   if (authDetails.type === 'api') {
     const apiKey = extractApiKey(authDetails);
     if (!apiKey) {
-      throw new Error('Missing Gemini API key');
+      throw new Error('Missing Google API key');
     }
     return createGeminiWebSearchClient({
       mode: 'api',
@@ -442,7 +442,7 @@ function createWebSearchClientForGoogle(
     };
     const accessToken = oauthAuth.access?.trim() ?? '';
     if (!accessToken) {
-      throw new Error('Missing Gemini OAuth access token');
+      throw new Error('Missing Google OAuth access token');
     }
 
     const refreshValue = oauthAuth.refresh;
@@ -478,7 +478,7 @@ function extractApiKey(authDetails?: ProviderAuth | null): string | undefined {
 export function createGoogleWebsearchClient(model: string): WebsearchClient {
   const normalizedModel = model.trim();
   if (!normalizedModel) {
-    throw new Error('Invalid Gemini web search model');
+    throw new Error('Invalid Google web search model');
   }
 
   return {

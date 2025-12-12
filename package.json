@@ -1,7 +1,7 @@
 {
-  "name": "opencode-websearch-gemini",
+  "name": "opencode-websearch-cited",
   "version": "0.9.2",
-  "description": "An OpenCode plugin that provides Gemini CLI-style web search via the Gemini API.",
+  "description": "An OpenCode plugin that provides provider-backed web search with citations.",
   "module": "index.ts",
   "type": "module",
   "license": "Apache-2.0",
@@ -15,10 +15,10 @@
   },
   "keywords": [
     "opencode",
-    "gemini",
-    "gemini-cli",
     "websearch",
-    "plugin"
+    "citations",
+    "plugin",
+    "agent"
   ],
   "files": [
     "index.ts",

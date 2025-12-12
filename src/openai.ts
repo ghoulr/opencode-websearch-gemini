@@ -41,7 +41,7 @@ type OpenAIResponsesRequest = {
 
 function buildWebSearchUserPrompt(query: string): string {
   const normalized = query.trim();
-  return `Search this query via the web_search tool: "${normalized}". Return grounded results with inline citations and end with a Sources list of URLs.`;
+  return `perform web search on "${normalized}". Return results with inline citations (**only** source index like [1], no URL in the answer) and end with a Sources list of URLs.`;
 }
 
 type OpenAIWebSearchOptions = {
@@ -158,6 +158,7 @@ async function runOpenAIWebSearch(options: OpenAIWebSearchOptions): Promise<stri
       },
     ],
     tools: [{ type: 'web_search' }],
+    include: ['web_search_call.action.sources'],
   };
 
   if (options.reasoningEffort || options.reasoningSummary) {
@@ -166,15 +167,12 @@ async function runOpenAIWebSearch(options: OpenAIWebSearchOptions): Promise<stri
       summary: options.reasoningSummary,
     };
   }
+  body.store = false;
 
   if (options.textVerbosity) {
     body.text = {
       verbosity: options.textVerbosity,
     };
-  }
-
-  if (typeof options.store === 'boolean') {
-    body.store = options.store;
   }
 
   if (Array.isArray(options.include) && options.include.length > 0) {

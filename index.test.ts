@@ -8,7 +8,7 @@ const WEBSEARCH_CONFIG: Config = {
   provider: {
     google: {
       options: {
-        websearch_grounded: {
+        websearch_cited: {
           model: 'gemini-2.5-flash',
         },
       },
@@ -18,10 +18,10 @@ const WEBSEARCH_CONFIG: Config = {
 
 let importCounter = 0;
 
-type GeminiGenerateContentResponse = Parameters<typeof formatWebSearchResponse>[0];
+type WebSearchGenerateContentResponse = Parameters<typeof formatWebSearchResponse>[0];
 
 describe('formatWebSearchResponse', () => {
-  it('returns fallback when Gemini response has no text', () => {
+  it('returns fallback when response has no text', () => {
     const response = createResponse({
       content: {
         role: 'model',
@@ -84,7 +84,7 @@ describe('formatWebSearchResponse', () => {
     const response = createResponse({
       content: {
         role: 'model',
-        parts: [{ text: 'こんにちは! Gemini CLI✨️' }],
+        parts: [{ text: 'こんにちは! Web Search✨️' }],
       },
       groundingMetadata: {
         groundingChunks: [
@@ -96,14 +96,14 @@ describe('formatWebSearchResponse', () => {
           },
           {
             web: {
-              title: 'google-gemini/gemini-cli',
-              uri: 'https://github.com/google-gemini/gemini-cli',
+              title: 'Example Repo',
+              uri: 'https://example.test/repo',
             },
           },
           {
             web: {
-              title: 'Gemini CLI: your open-source AI agent',
-              uri: 'https://blog.google/technology/developers/introducing-gemini-cli-open-source-ai-agent/',
+              title: 'Example Article',
+              uri: 'https://example.test/article',
             },
           },
         ],
@@ -123,12 +123,12 @@ describe('formatWebSearchResponse', () => {
     const result = formatWebSearchResponse(response, 'multibyte query');
 
     expect(result).toBe(
-      'こんにちは![1] Gemini CLI✨️[2][3]\n\nSources:\n[1] Japanese Greeting (https://example.test/japanese-greeting)\n[2] google-gemini/gemini-cli (https://github.com/google-gemini/gemini-cli)\n[3] Gemini CLI: your open-source AI agent (https://blog.google/technology/developers/introducing-gemini-cli-open-source-ai-agent/)'
+      'こんにちは![1] Web Search✨️[2][3]\n\nSources:\n[1] Japanese Greeting (https://example.test/japanese-greeting)\n[2] Example Repo (https://example.test/repo)\n[3] Example Article (https://example.test/article)'
     );
   });
 });
 
-describe('WebsearchGroundedPlugin', () => {
+describe('WebsearchCitedPlugin', () => {
   let fetchMock: ReturnType<typeof vi.spyOn<typeof globalThis, 'fetch'>>;
 
   beforeEach(() => {
@@ -170,12 +170,12 @@ describe('WebsearchGroundedPlugin', () => {
           provider: {
             google: {
               options: {
-                websearch_grounded: { model: '' },
+                websearch_cited: { model: '' },
               },
             },
           },
         } as Config),
-      'Missing websearch_grounded model for provider "google"'
+      'Missing websearch_cited model for provider "google"'
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -225,7 +225,7 @@ describe('WebsearchGroundedPlugin', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('returns Gemini failure details', async () => {
+  it('returns provider failure details', async () => {
     const failure = new Error('API Failure');
     fetchMock.mockRejectedValueOnce(failure);
 
@@ -280,7 +280,7 @@ describe('WebsearchGroundedPlugin', () => {
       provider: {
         google: {
           options: {
-            websearch_grounded: { model: 'gemini-custom-model' },
+            websearch_cited: { model: 'gemini-custom-model' },
           },
         },
       },
@@ -299,7 +299,7 @@ describe('WebsearchGroundedPlugin', () => {
       provider: {
         openai: {
           options: {
-            websearch_grounded: { model: 'gpt-4o-search-preview' },
+            websearch_cited: { model: 'gpt-4o-search-preview' },
           },
         },
       },
@@ -322,7 +322,7 @@ describe('WebsearchGroundedPlugin', () => {
       provider: {
         openai: {
           options: {
-            websearch_grounded: { model: 'gpt-4o-search-preview' },
+            websearch_cited: { model: 'gpt-4o-search-preview' },
           },
         },
       },
@@ -356,7 +356,7 @@ describe('WebsearchGroundedPlugin', () => {
       provider: {
         openai: {
           options: {
-            websearch_grounded: { model: 'gpt-4o-search-preview' },
+            websearch_cited: { model: 'gpt-4o-search-preview' },
           },
         },
       },
@@ -390,12 +390,12 @@ describe('WebsearchGroundedPlugin', () => {
       provider: {
         openai: {
           options: {
-            websearch_grounded: { model: 'gpt-4o-search-preview' },
+            websearch_cited: { model: 'gpt-4o-search-preview' },
           },
         },
         google: {
           options: {
-            websearch_grounded: { model: 'gemini-2.5-flash' },
+            websearch_cited: { model: 'gemini-2.5-flash' },
           },
         },
       },
@@ -444,7 +444,9 @@ describe('WebsearchGroundedPlugin', () => {
   });
 });
 
-type CandidateInput = NonNullable<GeminiGenerateContentResponse['candidates']>[number];
+type CandidateInput = NonNullable<
+  WebSearchGenerateContentResponse['candidates']
+>[number];
 
 async function expectThrowMessage(fn: () => Promise<unknown>, match: string) {
   try {
@@ -504,9 +506,9 @@ async function createEnv(config?: Config): Promise<{ hooks: Hooks[]; tool: Tool 
     }
   }
 
-  const tool = findTool(hooks, 'websearch_grounded');
+  const tool = findTool(hooks, 'websearch_cited');
   if (!tool) {
-    throw new Error('Tool "websearch_grounded" not registered');
+    throw new Error('Tool "websearch_cited" not registered');
   }
 
   return { hooks, tool };
@@ -570,7 +572,7 @@ function findTool(hooks: Hooks[], name: string): Tool | undefined {
   return found;
 }
 
-function createResponse(candidate: CandidateInput): GeminiGenerateContentResponse {
+function createResponse(candidate: CandidateInput): WebSearchGenerateContentResponse {
   return {
     candidates: [candidate],
   };
