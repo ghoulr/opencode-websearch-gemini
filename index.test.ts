@@ -164,18 +164,59 @@ describe('WebsearchCitedPlugin', () => {
   });
 
   it('returns invalid model when configured model is blank', async () => {
-    await expectThrowMessage(
-      () =>
-        createEnv({
-          provider: {
-            google: {
-              options: {
-                websearch_cited: { model: '' },
-              },
-            },
+    const { tool } = await createEnv({
+      provider: {
+        google: {
+          options: {
+            websearch_cited: { model: '' },
           },
-        } as Config),
+        },
+      },
+    } as Config);
+    const context = createToolContext();
+
+    await expectThrowMessage(
+      () => tool.execute({ query: 'opencode' }, context),
       'Missing websearch_cited model for provider "google"'
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does not fail init when config has no websearch model', async () => {
+    const { tool } = await createEnv({
+      provider: {
+        google: {},
+      },
+    } as Config);
+    const context = createToolContext();
+
+    await expectThrowMessage(
+      () => tool.execute({ query: 'opencode' }, context),
+      'Missing web search model configuration'
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('skips invalid provider configs and uses the first valid one', async () => {
+    const { tool } = await createEnv({
+      provider: {
+        openai: {
+          options: {
+            websearch_cited: { model: '' },
+          },
+        },
+        google: {
+          options: {
+            websearch_cited: { model: 'gemini-2.5-flash' },
+          },
+        },
+      },
+    } as Config);
+    const context = createToolContext();
+
+    await expectThrowMessage(
+      () => tool.execute({ query: 'opencode' }, context),
+      'Missing auth for provider "google"'
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });

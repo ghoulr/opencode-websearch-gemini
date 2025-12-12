@@ -38,17 +38,22 @@ function resolveGetAuth(providerID: string): GetAuth | undefined {
 }
 
 type SelectedWebsearchConfig = {
-  providerID: string;
+  providerID: SelectedProviderID;
   model: string;
 };
 
-function findFirstWebsearchCitedConfig(
-  config: Config
-): SelectedWebsearchConfig | undefined {
+type WebsearchCitedSelection = {
+  selected?: SelectedWebsearchConfig;
+  error?: string;
+};
+
+function findFirstWebsearchCitedConfig(config: Config): WebsearchCitedSelection {
   const providers = config.provider;
   if (!providers || typeof providers !== 'object') {
-    return undefined;
+    return {};
   }
+
+  let firstError: string | undefined;
 
   for (const [providerID, providerConfig] of Object.entries(providers)) {
     if (!providerConfig || typeof providerConfig !== 'object') {
@@ -66,20 +71,30 @@ function findFirstWebsearchCitedConfig(
 
     const cited = options.websearch_cited;
     if (!isRecord(cited)) {
-      throw new Error(
-        `Invalid websearch_cited configuration for provider "${providerID}".`
-      );
+      firstError ??= `Invalid websearch_cited configuration for provider "${providerID}".`;
+      continue;
     }
 
     const candidate = cited.model;
     if (typeof candidate !== 'string' || candidate.trim() === '') {
-      throw new Error(`Missing websearch_cited model for provider "${providerID}".`);
+      firstError ??= `Missing websearch_cited model for provider "${providerID}".`;
+      continue;
     }
 
-    return { providerID, model: candidate.trim() };
+    if (providerID !== GOOGLE_PROVIDER_ID && providerID !== OPENAI_PROVIDER_ID) {
+      firstError ??= `Unsupported provider "${providerID}" for websearch_cited.`;
+      continue;
+    }
+
+    return {
+      selected: {
+        providerID: providerID as SelectedProviderID,
+        model: candidate.trim(),
+      },
+    };
   }
 
-  return undefined;
+  return firstError ? { error: firstError } : {};
 }
 
 function parseOpenAIOptions(
@@ -152,31 +167,26 @@ const WebsearchCitedPlugin: Plugin = () => {
   let selectedProvider: SelectedProviderID | undefined;
   let selectedModel: string | undefined;
   let openaiConfig: OpenAIWebsearchConfig = {};
+  let configError: string | undefined;
 
   return Promise.resolve({
     config: (config) => {
-      const selected = findFirstWebsearchCitedConfig(config);
-      if (!selected) {
-        throw new Error('Missing web search model configuration.');
+      const { selected, error } = findFirstWebsearchCitedConfig(config);
+
+      selectedProvider = undefined;
+      selectedModel = undefined;
+      openaiConfig = {};
+      configError = error;
+
+      if (selected) {
+        selectedProvider = selected.providerID;
+        selectedModel = selected.model;
+        if (selectedProvider === OPENAI_PROVIDER_ID) {
+          const openaiProvider = config.provider?.openai;
+          openaiConfig = parseOpenAIOptions(openaiProvider, selectedModel);
+        }
       }
 
-      if (
-        selected.providerID !== GOOGLE_PROVIDER_ID &&
-        selected.providerID !== OPENAI_PROVIDER_ID
-      ) {
-        throw new Error(
-          `Unsupported provider "${selected.providerID}" for websearch_cited.`
-        );
-      }
-
-      selectedProvider = selected.providerID;
-      selectedModel = selected.model;
-      if (selectedProvider === OPENAI_PROVIDER_ID) {
-        const openaiProvider = config.provider?.openai;
-        openaiConfig = parseOpenAIOptions(openaiProvider, selectedModel);
-      } else {
-        openaiConfig = {};
-      }
       return Promise.resolve();
     },
     tool: {
@@ -197,6 +207,10 @@ const WebsearchCitedPlugin: Plugin = () => {
           const query = args.query?.trim();
           if (!query) {
             throw new Error("The 'query' parameter cannot be empty.");
+          }
+
+          if (configError) {
+            throw new Error(configError);
           }
 
           if (!selectedProvider || !selectedModel) {

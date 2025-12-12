@@ -25,12 +25,14 @@ Full example see [example_output.md](./example_output.md).
 
 ## Installation
 
-Add `opencode-websearch-cited` to your `~/.config/opencode/opencode.json`:
+Add `opencode-websearch-cited` to your `~/.config/opencode/opencode.json`.
+
+**IMPORTANT**: Put `opencode-websearch-cited` LAST in the `plugin` list to avoid impacting other plugins' auth process.
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-websearch-cited@1.0.0"]
+  "plugin": ["opencode-openai-codex-auth@4.1.0", "opencode-websearch-cited@1.0.0"]
 }
 ```
 
@@ -42,30 +44,30 @@ As long as the plugin is enabled and the provider auth is configured, any OpenCo
 
 ## Configure web search
 
-Login in with `opencode auth login` first.
-This plugin is compatable with [opencode-openai-codex-auth](https://github.com/numman-ali/opencode-openai-codex-auth.git)
+Log in with `opencode auth login` first.
+This plugin is compatible with [opencode-openai-codex-auth](https://github.com/numman-ali/opencode-openai-codex-auth.git)
 
-Set a `websearch_cited` model in your `opencode.json` (required).
+Set a `websearch_cited` model in your OpenCode config (required). If you use `opencode.json` (strict JSON), do not use trailing commas.
 
-```jsonc
+```json
 {
   "$schema": "https://opencode.ai/config.json",
   "provider": {
     "openai": {
       "options": {
         "websearch_cited": {
-          "model": "gpt-5.1",
-        },
-      },
+          "model": "gpt-5.1"
+        }
+      }
     },
     "google": {
       "options": {
         "websearch_cited": {
-          "model": "gemini-2.5-flash",
-        },
-      },
-    },
-  },
+          "model": "gemini-2.5-flash"
+        }
+      }
+    }
+  }
 }
 ```
 
