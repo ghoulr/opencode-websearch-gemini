@@ -1,10 +1,48 @@
 import type { Auth as ProviderAuth } from '@opencode-ai/sdk';
-import {
-  type GeminiGenerateContentResponse,
-  type GeminiMetadata,
-  type WebSearchErrorType,
-  type WebSearchResult,
-} from './types.ts';
+import { type GetAuth, type WebsearchClient } from './types.ts';
+
+type GeminiChunkWeb = {
+  title?: string;
+  uri?: string;
+};
+
+type GeminiChunk = {
+  web?: GeminiChunkWeb;
+};
+
+type GeminiSupportSegment = {
+  startIndex?: number;
+  endIndex?: number;
+};
+
+type GeminiSupport = {
+  segment?: GeminiSupportSegment;
+  groundingChunkIndices?: number[];
+};
+
+type GeminiMetadata = {
+  groundingChunks?: GeminiChunk[];
+  groundingSupports?: GeminiSupport[];
+};
+
+type GeminiTextPart = {
+  text?: string;
+  thought?: unknown;
+};
+
+type GeminiContent = {
+  role?: string;
+  parts?: GeminiTextPart[];
+};
+
+type GeminiCandidate = {
+  content?: GeminiContent;
+  groundingMetadata?: GeminiMetadata;
+};
+
+type GeminiGenerateContentResponse = {
+  candidates?: GeminiCandidate[];
+};
 
 type CitationInsertion = {
   index: number;
@@ -18,7 +56,7 @@ type GeminiWebSearchOptions = {
   abortSignal: AbortSignal;
 };
 
-export type GeminiClientConfig =
+type GeminiClientConfig =
   | {
       mode: 'api';
       apiKey: string;
@@ -31,8 +69,8 @@ export type GeminiClientConfig =
       projectId?: string;
     };
 
-export interface WebSearchClient {
-  search(query: string, abortSignal: AbortSignal): Promise<WebSearchResult>;
+interface WebSearchClient {
+  search(query: string, abortSignal: AbortSignal): Promise<string>;
 }
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -51,7 +89,7 @@ function buildGeminiUrl(model: string): string {
   return `${GEMINI_API_BASE}/models/${encoded}:generateContent`;
 }
 
-export async function runGeminiWebSearch(
+async function runGeminiWebSearch(
   options: GeminiWebSearchOptions
 ): Promise<GeminiGenerateContentResponse> {
   const response = await fetch(buildGeminiUrl(options.model), {
@@ -86,15 +124,11 @@ export async function runGeminiWebSearch(
 export function formatWebSearchResponse(
   response: GeminiGenerateContentResponse,
   query: string
-): WebSearchResult {
+): string {
   const responseText = extractResponseText(response);
 
   if (!responseText || !responseText.trim()) {
-    const message = `No search results or information found for query: "${query}"`;
-    return {
-      llmContent: message,
-      returnDisplay: 'No information found.',
-    };
+    return `No search results or information found for query: "${query}"`;
   }
 
   const metadata = extractGroundingMetadata(response);
@@ -119,18 +153,7 @@ export function formatWebSearchResponse(
     modifiedText += `\n\nSources:\n${sourceLines.join('\n')}`;
   }
 
-  const llmContent = `Web search results for "${query}":\n\n${modifiedText}`;
-
-  const result: WebSearchResult = {
-    llmContent,
-    returnDisplay: `Search results for "${query}" returned.`,
-  };
-
-  if (hasSources && sources) {
-    result.sources = sources;
-  }
-
-  return result;
+  return modifiedText;
 }
 
 function extractResponseText(
@@ -235,7 +258,7 @@ class GeminiApiKeyClient implements WebSearchClient {
     this.model = normalizedModel;
   }
 
-  async search(query: string, abortSignal: AbortSignal): Promise<WebSearchResult> {
+  async search(query: string, abortSignal: AbortSignal): Promise<string> {
     const normalizedQuery = query.trim();
     const response = await runGeminiWebSearch({
       apiKey: this.apiKey,
@@ -265,7 +288,7 @@ class GeminiOAuthClient implements WebSearchClient {
       normalizedProject && normalizedProject !== '' ? normalizedProject : undefined;
   }
 
-  async search(query: string, abortSignal: AbortSignal): Promise<WebSearchResult> {
+  async search(query: string, abortSignal: AbortSignal): Promise<string> {
     const normalizedQuery = query.trim();
     const url = `${GEMINI_CODE_ASSIST_ENDPOINT}${GEMINI_CODE_ASSIST_GENERATE_PATH}`;
 
@@ -395,7 +418,7 @@ function createGeminiWebSearchClient(config: GeminiClientConfig): WebSearchClien
   return new GeminiOAuthClient(config.accessToken, config.model, config.projectId);
 }
 
-export function createWebSearchClientForGoogle(
+function createWebSearchClientForGoogle(
   authDetails: ProviderAuth,
   model: string
 ): WebSearchClient {
@@ -441,15 +464,10 @@ export function createWebSearchClientForGoogle(
     });
   }
 
-  throw new Error('Unsupported auth type for Gemini web search');
+  throw new Error('Unsupported auth type for Google web search');
 }
 
-export function resolveGeminiApiKey(storedKey?: string): string | undefined {
-  const normalizedStored = storedKey?.trim();
-  return normalizedStored && normalizedStored !== '' ? normalizedStored : undefined;
-}
-
-export function extractApiKey(authDetails?: ProviderAuth | null): string | undefined {
+function extractApiKey(authDetails?: ProviderAuth | null): string | undefined {
   if (!authDetails || authDetails.type !== 'api') {
     return undefined;
   }
@@ -457,20 +475,26 @@ export function extractApiKey(authDetails?: ProviderAuth | null): string | undef
   return normalized === '' ? undefined : normalized;
 }
 
-export function buildErrorResult(
-  message: string,
-  code: WebSearchErrorType,
-  details?: string
-): WebSearchResult {
-  const llmContent = details
-    ? `Error: ${message}\n\nDetails: ${details}`
-    : `Error: ${message}`;
+export function createGoogleWebsearchClient(model: string): WebsearchClient {
+  const normalizedModel = model.trim();
+  if (!normalizedModel) {
+    throw new Error('Invalid Gemini web search model');
+  }
+
   return {
-    llmContent,
-    returnDisplay: message,
-    error: {
-      message: details ?? message,
-      type: code,
+    async search(query, abortSignal, getAuth: GetAuth) {
+      const normalizedQuery = query.trim();
+      if (!normalizedQuery) {
+        throw new Error('Query must not be empty');
+      }
+
+      const auth = await getAuth();
+      if (!auth) {
+        throw new Error('Missing auth for provider "google"');
+      }
+
+      const client = createWebSearchClientForGoogle(auth, normalizedModel);
+      return client.search(normalizedQuery, abortSignal);
     },
   };
 }

@@ -1,22 +1,15 @@
 import os from 'os';
 import path from 'path';
-import { runOpenAIWebSearch } from './src/openai.ts';
-import type { Auth as ProviderAuth } from '@opencode-ai/sdk';
+import type { PluginInput } from '@opencode-ai/plugin';
+import type { Auth as ProviderAuth, Config, Provider } from '@opencode-ai/sdk';
+
+import type { Plugin as PluginInstance } from '@opencode-ai/plugin';
 
 type CliArgs = {
   query?: string;
-  model?: string;
   config?: string;
   auth?: string;
-};
-
-type OpenAIConfig = {
-  model: string;
-  reasoningEffort?: string;
-  reasoningSummary?: string;
-  textVerbosity?: string;
-  store?: boolean;
-  include?: string[];
+  raw?: boolean;
 };
 
 type AuthFile = {
@@ -37,6 +30,11 @@ function parseArgs(argv: string[]): CliArgs {
       continue;
     }
     const key = token.slice(2);
+    if (key === 'raw') {
+      result.raw = true;
+      index += 1;
+      continue;
+    }
     const next = argv[index + 1];
     if (!next || next.startsWith('--')) {
       if (key === 'query') {
@@ -47,8 +45,6 @@ function parseArgs(argv: string[]): CliArgs {
     }
     if (key === 'query') {
       result.query = next;
-    } else if (key === 'model') {
-      result.model = next;
     } else if (key === 'config') {
       result.config = next;
     } else if (key === 'auth') {
@@ -97,102 +93,16 @@ async function loadConfig(filepath: string): Promise<unknown> {
   return parsed;
 }
 
-function extractOpenAIConfig(root: unknown, overrideModel?: string): OpenAIConfig {
+function asSdkConfig(root: unknown): Config {
   if (!isRecord(root)) {
     throw new Error('Invalid opencode config: root is not an object');
   }
-  const provider = root.provider;
-  if (!isRecord(provider)) {
-    throw new Error('Invalid opencode config: provider block missing');
-  }
-  const openai = provider.openai;
-  if (!isRecord(openai)) {
-    throw new Error('Invalid opencode config: provider.openai missing');
-  }
-
-  const options = isRecord(openai.options) ? openai.options : undefined;
-  const models = isRecord(openai.models) ? openai.models : undefined;
-
-  const baseModel = (() => {
-    if (overrideModel && overrideModel.trim() !== '') {
-      return overrideModel.trim();
-    }
-    if (!options) {
-      return undefined;
-    }
-    const grounded = options.websearch_grounded;
-    if (!isRecord(grounded)) {
-      return undefined;
-    }
-    const candidate = grounded.model;
-    if (typeof candidate !== 'string') {
-      return undefined;
-    }
-    const trimmed = candidate.trim();
-    return trimmed === '' ? undefined : trimmed;
-  })();
-
-  const model = baseModel ?? 'gpt-5.1';
-
-  const baseOptions = options ?? {};
-  let modelOptions: Record<string, unknown> = {};
-  if (models && models[model] && isRecord(models[model])) {
-    const entry = models[model] as { options?: unknown };
-    if (isRecord(entry.options)) {
-      modelOptions = entry.options;
-    }
-  }
-
-  const merged: Record<string, unknown> = {
-    ...baseOptions,
-    ...modelOptions,
-  };
-
-  const result: OpenAIConfig = { model };
-
-  const reasoningEffort = merged.reasoningEffort;
-  if (typeof reasoningEffort === 'string' && reasoningEffort.trim() !== '') {
-    result.reasoningEffort = reasoningEffort.trim();
-  }
-
-  const reasoningSummary = merged.reasoningSummary;
-  if (typeof reasoningSummary === 'string' && reasoningSummary.trim() !== '') {
-    result.reasoningSummary = reasoningSummary.trim();
-  }
-
-  const textVerbosity = merged.textVerbosity;
-  if (typeof textVerbosity === 'string' && textVerbosity.trim() !== '') {
-    result.textVerbosity = textVerbosity.trim();
-  }
-
-  const store = merged.store;
-  if (typeof store === 'boolean') {
-    result.store = store;
-  }
-
-  const include = merged.include;
-  if (Array.isArray(include)) {
-    const filtered = include.filter(
-      (value) => typeof value === 'string' && value.trim() !== ''
-    ) as string[];
-    if (filtered.length > 0) {
-      result.include = filtered;
-    }
-  }
-
-  return result;
+  return root as unknown as Config;
 }
 
-async function loadOpenAIAuth(filepath: string): Promise<ProviderAuth> {
-  const text = await readTextFileOrThrow(filepath);
-  const parsed: unknown = JSON.parse(text);
-  if (!isRecord(parsed)) {
-    throw new Error('Invalid auth file: root is not an object');
-  }
-  const authFile = parsed as AuthFile;
-  const entry = authFile.openai;
+function parseProviderAuth(entry: unknown, providerID: string): ProviderAuth {
   if (!isRecord(entry)) {
-    throw new Error('Auth for provider "openai" not found in auth file');
+    throw new Error(`Invalid auth entry for provider "${providerID}"`);
   }
   const type = entry.type;
   if (type === 'oauth') {
@@ -200,7 +110,7 @@ async function loadOpenAIAuth(filepath: string): Promise<ProviderAuth> {
     const refresh = typeof entry.refresh === 'string' ? entry.refresh : '';
     const expires = typeof entry.expires === 'number' ? entry.expires : Number.NaN;
     if (!access || !refresh || !Number.isFinite(expires)) {
-      throw new Error('Invalid OAuth auth values for provider "openai"');
+      throw new Error(`Invalid OAuth auth values for provider "${providerID}"`);
     }
     return {
       type: 'oauth',
@@ -212,7 +122,7 @@ async function loadOpenAIAuth(filepath: string): Promise<ProviderAuth> {
   if (type === 'api') {
     const key = typeof entry.key === 'string' ? entry.key : '';
     if (!key) {
-      throw new Error('Invalid API key auth for provider "openai"');
+      throw new Error(`Invalid API key auth for provider "${providerID}"`);
     }
     return {
       type: 'api',
@@ -223,7 +133,7 @@ async function loadOpenAIAuth(filepath: string): Promise<ProviderAuth> {
     const key = typeof entry.key === 'string' ? entry.key : '';
     const token = typeof entry.token === 'string' ? entry.token : '';
     if (!key || !token) {
-      throw new Error('Invalid wellknown auth for provider "openai"');
+      throw new Error(`Invalid wellknown auth for provider "${providerID}"`);
     }
     return {
       type: 'wellknown',
@@ -232,7 +142,116 @@ async function loadOpenAIAuth(filepath: string): Promise<ProviderAuth> {
     };
   }
 
-  throw new Error(`Unsupported auth type for openai: ${String(type)}`);
+  throw new Error(
+    `Unsupported auth type for provider "${providerID}": ${String(type)}`
+  );
+}
+
+async function loadProviderAuth(
+  filepath: string,
+  providerID: string
+): Promise<ProviderAuth | undefined> {
+  const text = await readTextFileOrThrow(filepath);
+  const parsed: unknown = JSON.parse(text);
+  if (!isRecord(parsed)) {
+    throw new Error('Invalid auth file: root is not an object');
+  }
+  const authFile = parsed as AuthFile;
+  const entry = authFile[providerID];
+  if (entry == null) {
+    return undefined;
+  }
+  return parseProviderAuth(entry, providerID);
+}
+
+function createPluginInput(): PluginInput {
+  const directory = process.cwd();
+  const input: PluginInput = {
+    client: {} as unknown as PluginInput['client'],
+    project: {} as unknown as PluginInput['project'],
+    directory,
+    worktree: directory,
+    $: Bun.$,
+  };
+  return input;
+}
+
+function createToolContext() {
+  const controller = new AbortController();
+  return {
+    sessionID: 'cli',
+    messageID: 'cli',
+    agent: 'cli',
+    abort: controller.signal,
+  };
+}
+
+type Hooks = Awaited<ReturnType<PluginInstance>>;
+
+type Tool = {
+  execute: (args: unknown, context: unknown) => Promise<string>;
+};
+
+function isTool(value: unknown): value is Tool {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const execute = (value as Record<string, unknown>).execute;
+  return typeof execute === 'function';
+}
+
+function getPluginsFromModule(mod: unknown): PluginInstance[] {
+  if (!mod || typeof mod !== 'object') {
+    throw new Error('Invalid plugin module');
+  }
+
+  const plugins: PluginInstance[] = [];
+  for (const [name, value] of Object.entries(mod as Record<string, unknown>)) {
+    if (typeof value !== 'function') {
+      throw new Error(`Invalid plugin export "${name}"`);
+    }
+    plugins.push(value as PluginInstance);
+  }
+
+  return plugins;
+}
+
+async function initHooks(input: PluginInput): Promise<Hooks[]> {
+  const mod = (await import('./index')) as unknown;
+  const plugins = getPluginsFromModule(mod);
+  const hooks: Hooks[] = [];
+  for (const plugin of plugins) {
+    hooks.push(await plugin(input));
+  }
+  return hooks;
+}
+
+function findAuthHook(hooks: Hooks[], providerID: string): Hooks | undefined {
+  for (const hook of hooks) {
+    if (hook.auth?.provider === providerID) {
+      return hook;
+    }
+  }
+  return undefined;
+}
+
+function findTool(hooks: Hooks[], name: string): Tool | undefined {
+  let found: unknown;
+  for (const hook of hooks) {
+    const tool = (hook.tool as Record<string, unknown> | undefined)?.[name];
+    if (!tool) {
+      continue;
+    }
+    if (found) {
+      throw new Error(`Tool "${name}" registered multiple times`);
+    }
+    found = tool;
+  }
+  if (!isTool(found)) {
+    return undefined;
+  }
+  return found;
 }
 
 async function main() {
@@ -241,7 +260,7 @@ async function main() {
 
   if (!args.query || args.query.trim() === '') {
     console.error(
-      'Usage: bun cli.ts --query "<text>" [--model "<model>"] [--config "<path>"] [--auth "<path>"]'
+      'Usage: bun cli.ts --query "<text>" [--config "<path>"] [--auth "<path>"] [--raw]'
     );
     process.exit(1);
   }
@@ -250,27 +269,46 @@ async function main() {
   const authPath = args.auth || defaultAuthPath();
 
   const configRoot = await loadConfig(configPath);
-  const openaiConfig = extractOpenAIConfig(configRoot, args.model);
-  const auth = await loadOpenAIAuth(authPath);
+  const config = asSdkConfig(configRoot);
 
-  const controller = new AbortController();
+  const input = createPluginInput();
+  const hooks = await initHooks(input);
 
-  const result = await runOpenAIWebSearch({
-    model: openaiConfig.model,
-    query: args.query,
-    abortSignal: controller.signal,
-    auth,
-    reasoningEffort: openaiConfig.reasoningEffort,
-    reasoningSummary: openaiConfig.reasoningSummary,
-    textVerbosity: openaiConfig.textVerbosity,
-    store: openaiConfig.store,
-    include: openaiConfig.include,
-  });
+  const provider = {} as Provider;
 
-  console.log(result.llmContent);
+  const googleGetAuth = (() =>
+    loadProviderAuth(authPath, 'google')) as unknown as () => Promise<ProviderAuth>;
+  const openaiGetAuth = (() =>
+    loadProviderAuth(authPath, 'openai')) as unknown as () => Promise<ProviderAuth>;
+
+  const googleAuthHook = findAuthHook(hooks, 'google');
+  const openaiAuthHook = findAuthHook(hooks, 'openai');
+
+  await googleAuthHook?.auth?.loader?.(googleGetAuth, provider);
+  await openaiAuthHook?.auth?.loader?.(openaiGetAuth, provider);
+
+  for (const hook of hooks) {
+    await hook.config?.(config);
+  }
+
+  const tool = findTool(hooks, 'websearch_grounded');
+  if (!tool) {
+    throw new Error('Tool "websearch_grounded" not registered');
+  }
+
+  const context = createToolContext();
+  const raw = await tool.execute({ query: args.query }, context);
+
+  if (args.raw) {
+    console.log(raw);
+    return;
+  }
+
+  console.log(raw);
 }
 
 main().catch((error) => {
-  console.error('Error running OpenAI web search CLI.', error);
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(message);
   process.exit(1);
 });

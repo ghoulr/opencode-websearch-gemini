@@ -1,6 +1,6 @@
 import type { Auth as ProviderAuth } from '@opencode-ai/sdk';
 import codexPrompt from './codex_prompt.md' with { type: 'text' };
-import type { WebSearchResult } from './types.ts';
+import type { GetAuth, WebsearchClient } from './types.ts';
 
 type OpenAIReasoningConfig = {
   effort?: string;
@@ -39,11 +39,24 @@ type OpenAIResponsesRequest = {
   parallel_tool_calls?: boolean;
 };
 
+function buildWebSearchUserPrompt(query: string): string {
+  const normalized = query.trim();
+  return `Search this query via the web_search tool: "${normalized}". Return grounded results with inline citations and end with a Sources list of URLs.`;
+}
+
 type OpenAIWebSearchOptions = {
   model: string;
   query: string;
   abortSignal: AbortSignal;
   auth: ProviderAuth;
+  reasoningEffort?: string;
+  reasoningSummary?: string;
+  textVerbosity?: string;
+  store?: boolean;
+  include?: string[];
+};
+
+export type OpenAIWebsearchConfig = {
   reasoningEffort?: string;
   reasoningSummary?: string;
   textVerbosity?: string;
@@ -116,9 +129,7 @@ function extractChatGPTAccountId(auth: ProviderAuth): string | undefined {
   }
 }
 
-export async function runOpenAIWebSearch(
-  options: OpenAIWebSearchOptions
-): Promise<WebSearchResult> {
+async function runOpenAIWebSearch(options: OpenAIWebSearchOptions): Promise<string> {
   const normalizedModel = options.model.trim();
   if (!normalizedModel) {
     throw new Error('Invalid OpenAI web search model');
@@ -141,7 +152,7 @@ export async function runOpenAIWebSearch(
         content: [
           {
             type: 'input_text',
-            text: normalizedQuery,
+            text: buildWebSearchUserPrompt(normalizedQuery),
           },
         ],
       },
@@ -180,6 +191,7 @@ export async function runOpenAIWebSearch(
   body.parallel_tool_calls = true;
 
   if (isOAuth) {
+    // NOTE: Do not modify Codex backend instructions; invalid instructions will be rejected.
     body.instructions = codexPrompt;
   } else {
     body.instructions =
@@ -220,17 +232,45 @@ export async function runOpenAIWebSearch(
   const text = extractOpenAIText(payload);
 
   if (!text || !text.trim()) {
-    const fallback = `Web search completed for "${normalizedQuery}", but no results were returned.`;
-    return {
-      llmContent: fallback,
-      returnDisplay: 'Web search did not return any content.',
-    };
+    return `Web search completed for "${normalizedQuery}", but no results were returned.`;
   }
 
-  const llmContent = `Web search results for "${normalizedQuery}":\n\n${text}`;
+  return text;
+}
+
+export function createOpenAIWebsearchClient(
+  model: string,
+  config: OpenAIWebsearchConfig
+): WebsearchClient {
+  const normalizedModel = model.trim();
+  if (!normalizedModel) {
+    throw new Error('Invalid OpenAI web search model');
+  }
+
   return {
-    llmContent,
-    returnDisplay: `Search results for "${normalizedQuery}" returned.`,
+    async search(query, abortSignal, getAuth: GetAuth) {
+      const normalizedQuery = query.trim();
+      if (!normalizedQuery) {
+        throw new Error('Query must not be empty');
+      }
+
+      const auth = await getAuth();
+      if (!auth) {
+        throw new Error('Missing auth for provider "openai"');
+      }
+
+      return runOpenAIWebSearch({
+        model: normalizedModel,
+        query: normalizedQuery,
+        abortSignal,
+        auth,
+        reasoningEffort: config.reasoningEffort,
+        reasoningSummary: config.reasoningSummary,
+        textVerbosity: config.textVerbosity,
+        store: config.store,
+        include: config.include,
+      });
+    },
   };
 }
 
@@ -346,9 +386,7 @@ async function readOpenAIResponsePayload(response: Response): Promise<unknown> {
     try {
       const parsed = JSON.parse(trimmed) as unknown;
       return parsed;
-    } catch {
-      // fall through to SSE parsing
-    }
+    } catch {}
   }
 
   const extracted = extractOpenAIResponseFromSse(text);

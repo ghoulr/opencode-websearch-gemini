@@ -1,22 +1,12 @@
 import { type Plugin, tool } from '@opencode-ai/plugin';
-import type { Auth as ProviderAuth, Config } from '@opencode-ai/sdk';
+import type { Config } from '@opencode-ai/sdk';
 
-import { buildErrorResult, createWebSearchClientForGoogle } from '@/gemini';
-import { runOpenAIWebSearch } from '@/openai';
-import { WEBSEARCH_ERROR, WEBSEARCH_ERROR_MESSAGES } from '@/types';
+import { createGoogleWebsearchClient } from '@/google';
+import { createOpenAIWebsearchClient, type OpenAIWebsearchConfig } from '@/openai';
+import { type GetAuth } from '@/types';
 
-const GEMINI_PROVIDER_ID = 'google';
-
-type OpenAIWebsearchConfig = {
-  reasoningEffort?: string;
-  reasoningSummary?: string;
-  textVerbosity?: string;
-  store?: boolean;
-  include?: string[];
-};
-
-let openaiAuth: ProviderAuth | undefined;
-let openaiConfig: OpenAIWebsearchConfig = {};
+const GOOGLE_PROVIDER_ID = 'google';
+const OPENAI_PROVIDER_ID = 'openai';
 
 const GROUNDED_SEARCH_TOOL_DESCRIPTION =
   'Performs a web search with LLM-grounded results and citations. This tool is useful for finding information on the internet with reliable sources and inline references.';
@@ -31,8 +21,65 @@ const WEBSEARCH_ALLOWED_KEYS_DESCRIPTION = Array.from(WEBSEARCH_ALLOWED_KEYS)
   .map((key) => `'${key}'`)
   .join(', ');
 
+type SelectedProviderID = typeof GOOGLE_PROVIDER_ID | typeof OPENAI_PROVIDER_ID;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+const authRegistry = new Map<string, GetAuth>();
+
+function registerGetAuth(providerID: string, getAuth: GetAuth): void {
+  authRegistry.set(providerID, getAuth);
+}
+
+function resolveGetAuth(providerID: string): GetAuth | undefined {
+  return authRegistry.get(providerID);
+}
+
+type SelectedWebsearchConfig = {
+  providerID: string;
+  model: string;
+};
+
+function findFirstWebsearchGroundedConfig(
+  config: Config
+): SelectedWebsearchConfig | undefined {
+  const providers = config.provider;
+  if (!providers || typeof providers !== 'object') {
+    return undefined;
+  }
+
+  for (const [providerID, providerConfig] of Object.entries(providers)) {
+    if (!providerConfig || typeof providerConfig !== 'object') {
+      continue;
+    }
+
+    const options = (providerConfig as { options?: unknown }).options;
+    if (!isRecord(options)) {
+      continue;
+    }
+
+    if (!('websearch_grounded' in options)) {
+      continue;
+    }
+
+    const grounded = options.websearch_grounded;
+    if (!isRecord(grounded)) {
+      throw new Error(
+        `Invalid websearch_grounded configuration for provider "${providerID}".`
+      );
+    }
+
+    const candidate = grounded.model;
+    if (typeof candidate !== 'string' || candidate.trim() === '') {
+      throw new Error(`Missing websearch_grounded model for provider "${providerID}".`);
+    }
+
+    return { providerID, model: candidate.trim() };
+  }
+
+  return undefined;
 }
 
 function parseOpenAIOptions(
@@ -101,99 +148,35 @@ function parseOpenAIOptions(
   return result;
 }
 
-export const WebsearchGeminiPlugin: Plugin = () => {
-  let providerAuth: ProviderAuth | undefined;
-  let geminiWebsearchModel: string | undefined;
-  let openaiWebsearchModel: string | undefined;
-  let websearchClient: ReturnType<typeof createWebSearchClientForGoogle> | undefined;
-
-  function parseGeminiWebsearchModel(config: Config): string | undefined {
-    const providerConfig = config.provider?.[GEMINI_PROVIDER_ID];
-    const providerOptions = providerConfig?.options;
-    if (
-      !providerOptions ||
-      typeof providerOptions !== 'object' ||
-      Array.isArray(providerOptions)
-    ) {
-      return undefined;
-    }
-
-    const groundedBlock = (providerOptions as Record<string, unknown>)[
-      'websearch_grounded'
-    ];
-    if (
-      !groundedBlock ||
-      typeof groundedBlock !== 'object' ||
-      Array.isArray(groundedBlock)
-    ) {
-      return undefined;
-    }
-
-    const candidate = (groundedBlock as { model?: unknown }).model;
-    if (typeof candidate !== 'string') {
-      return undefined;
-    }
-    const trimmed = candidate.trim();
-    return trimmed === '' ? undefined : trimmed;
-  }
-
-  function parseOpenAIWebsearchModel(config: Config): string | undefined {
-    const providerConfig = config.provider?.openai;
-    const providerOptions = providerConfig?.options;
-    if (
-      !providerOptions ||
-      typeof providerOptions !== 'object' ||
-      Array.isArray(providerOptions)
-    ) {
-      return undefined;
-    }
-
-    const groundedBlock = (providerOptions as Record<string, unknown>)[
-      'websearch_grounded'
-    ];
-    if (
-      !groundedBlock ||
-      typeof groundedBlock !== 'object' ||
-      Array.isArray(groundedBlock)
-    ) {
-      return undefined;
-    }
-
-    const candidate = (groundedBlock as { model?: unknown }).model;
-    if (typeof candidate !== 'string') {
-      return undefined;
-    }
-    const trimmed = candidate.trim();
-    return trimmed === '' ? undefined : trimmed;
-  }
+const WebsearchGroundedPlugin: Plugin = () => {
+  let selectedProvider: SelectedProviderID | undefined;
+  let selectedModel: string | undefined;
+  let openaiConfig: OpenAIWebsearchConfig = {};
 
   return Promise.resolve({
-    auth: {
-      provider: GEMINI_PROVIDER_ID,
-      async loader(getAuth) {
-        try {
-          const authDetails = await getAuth();
-          providerAuth = authDetails;
-          websearchClient = undefined;
-        } catch {
-          providerAuth = undefined;
-          websearchClient = undefined;
-        }
-        return {};
-      },
-      methods: [
-        {
-          type: 'api',
-          label: 'Google API key',
-        },
-      ],
-    },
     config: (config) => {
-      geminiWebsearchModel = parseGeminiWebsearchModel(config);
-      openaiWebsearchModel = parseOpenAIWebsearchModel(config);
-      const openaiProvider = config.provider?.openai;
-      openaiConfig = parseOpenAIOptions(openaiProvider, openaiWebsearchModel);
-      websearchClient = undefined;
+      const selected = findFirstWebsearchGroundedConfig(config);
+      if (!selected) {
+        throw new Error('Missing web search model configuration.');
+      }
+
+      if (
+        selected.providerID !== GOOGLE_PROVIDER_ID &&
+        selected.providerID !== OPENAI_PROVIDER_ID
+      ) {
+        throw new Error(
+          `Unsupported provider "${selected.providerID}" for websearch_grounded.`
+        );
+      }
+
+      selectedProvider = selected.providerID;
+      selectedModel = selected.model;
+      if (selectedProvider === OPENAI_PROVIDER_ID) {
+        const openaiProvider = config.provider?.openai;
+        openaiConfig = parseOpenAIOptions(openaiProvider, selectedModel);
+      } else {
+        openaiConfig = {};
+      }
       return Promise.resolve();
     },
     tool: {
@@ -204,140 +187,78 @@ export const WebsearchGeminiPlugin: Plugin = () => {
           const argKeys = Object.keys(args ?? {});
           const extraKeys = argKeys.filter((key) => !WEBSEARCH_ALLOWED_KEYS.has(key));
           if (extraKeys.length > 0) {
-            return JSON.stringify(
-              buildErrorResult(
-                WEBSEARCH_ERROR_MESSAGES.invalidToolArguments,
-                WEBSEARCH_ERROR.invalidToolArguments,
-                `Unknown argument(s): ${extraKeys.join(
-                  ', '
-                )}, only ${WEBSEARCH_ALLOWED_KEYS_DESCRIPTION} supported.`
-              )
+            throw new Error(
+              `Unknown argument(s): ${extraKeys.join(
+                ', '
+              )}, only ${WEBSEARCH_ALLOWED_KEYS_DESCRIPTION} supported.`
             );
           }
 
           const query = args.query?.trim();
           if (!query) {
-            return JSON.stringify(
-              buildErrorResult(
-                WEBSEARCH_ERROR_MESSAGES.invalidQuery,
-                WEBSEARCH_ERROR.invalidQuery
-              )
-            );
+            throw new Error("The 'query' parameter cannot be empty.");
           }
 
-          const openaiModel = openaiWebsearchModel;
-          if (openaiModel) {
-            const auth = openaiAuth;
-            if (!auth) {
-              return JSON.stringify(
-                buildErrorResult(
-                  WEBSEARCH_ERROR_MESSAGES.invalidAuth,
-                  WEBSEARCH_ERROR.invalidAuth,
-                  'Authenticate the OpenAI provider via `opencode auth login` using the OpenAI Codex OAuth plugin.'
-                )
+          if (!selectedProvider || !selectedModel) {
+            throw new Error('Missing web search model configuration.');
+          }
+
+          if (selectedProvider === OPENAI_PROVIDER_ID) {
+            const getAuth = resolveGetAuth(OPENAI_PROVIDER_ID);
+            if (!getAuth) {
+              throw new Error(
+                'Missing auth for provider "openai". Authenticate via `opencode auth login`.'
               );
             }
 
-            try {
-              const result = await runOpenAIWebSearch({
-                model: openaiModel,
-                query,
-                abortSignal: context.abort,
-                auth,
-                reasoningEffort: openaiConfig.reasoningEffort,
-                reasoningSummary: openaiConfig.reasoningSummary,
-                textVerbosity: openaiConfig.textVerbosity,
-                store: openaiConfig.store,
-                include: openaiConfig.include,
-              });
-              return JSON.stringify(result);
-            } catch (error) {
-              console.warn('OpenAI web search failed.', error);
-              const message = error instanceof Error ? error.message : String(error);
-              return JSON.stringify(
-                buildErrorResult(
-                  WEBSEARCH_ERROR_MESSAGES.webSearchFailed,
-                  WEBSEARCH_ERROR.webSearchFailed,
-                  `OpenAI web search request failed: ${message}`
-                )
-              );
-            }
+            const client = createOpenAIWebsearchClient(selectedModel, openaiConfig);
+            return client.search(query, context.abort, getAuth);
           }
 
-          const model = geminiWebsearchModel;
-          if (!model) {
-            return JSON.stringify(
-              buildErrorResult(
-                WEBSEARCH_ERROR_MESSAGES.invalidModel,
-                WEBSEARCH_ERROR.invalidModel
-              )
+          const getAuth = resolveGetAuth(GOOGLE_PROVIDER_ID);
+          if (!getAuth) {
+            throw new Error(
+              'Missing auth for provider "google". Authenticate via `opencode auth login`.'
             );
           }
 
-          const authDetails = providerAuth;
-          if (!authDetails) {
-            return JSON.stringify(
-              buildErrorResult(
-                WEBSEARCH_ERROR_MESSAGES.invalidAuth,
-                WEBSEARCH_ERROR.invalidAuth,
-                'Authenticate the Google provider via `opencode auth login` using OAuth or an API key.'
-              )
-            );
-          }
-
-          if (!websearchClient) {
-            try {
-              websearchClient = createWebSearchClientForGoogle(authDetails, model);
-            } catch {
-              return JSON.stringify(
-                buildErrorResult(
-                  WEBSEARCH_ERROR_MESSAGES.invalidAuth,
-                  WEBSEARCH_ERROR.invalidAuth,
-                  'Authenticate the Google provider via `opencode auth login` using OAuth or an API key.'
-                )
-              );
-            }
-          }
-
-          try {
-            const result = await websearchClient.search(query, context.abort);
-            return JSON.stringify(result);
-          } catch (error) {
-            console.warn('Gemini web search failed.', error);
-            const message = error instanceof Error ? error.message : String(error);
-            return JSON.stringify(
-              buildErrorResult(
-                WEBSEARCH_ERROR_MESSAGES.webSearchFailed,
-                WEBSEARCH_ERROR.webSearchFailed,
-                `Gemini web search request failed: ${message}`
-              )
-            );
-          }
+          const client = createGoogleWebsearchClient(selectedModel);
+          return client.search(query, context.abort, getAuth);
         },
       }),
     },
   });
 };
 
-export const WebsearchOpenAIAuthPlugin: Plugin = () => {
+export const WebsearchGroundedGooglePlugin: Plugin = () => {
   return Promise.resolve({
     auth: {
-      provider: 'openai',
-      async loader(getAuth) {
-        try {
-          const authDetails = await getAuth();
-          openaiAuth = authDetails;
-        } catch {
-          openaiAuth = undefined;
-        }
-        return {};
+      provider: GOOGLE_PROVIDER_ID,
+      loader(getAuth) {
+        registerGetAuth(GOOGLE_PROVIDER_ID, getAuth);
+        return Promise.resolve({});
+      },
+      methods: [
+        {
+          type: 'api',
+          label: 'Google API key',
+        },
+      ],
+    },
+  });
+};
+
+export const WebsearchGroundedOpenAIPlugin: Plugin = () => {
+  return Promise.resolve({
+    auth: {
+      provider: OPENAI_PROVIDER_ID,
+      loader(getAuth) {
+        registerGetAuth(OPENAI_PROVIDER_ID, getAuth);
+        return Promise.resolve({});
       },
       methods: [],
     },
   });
 };
 
-export { formatWebSearchResponse } from '@/gemini';
-export type { WebSearchResult } from '@/types';
-
-export default WebsearchGeminiPlugin;
+export default WebsearchGroundedPlugin;
