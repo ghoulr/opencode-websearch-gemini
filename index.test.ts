@@ -347,6 +347,40 @@ describe('WebsearchGroundedPlugin', () => {
     expect(headers.Authorization).toBe('Bearer test-access-token');
   });
 
+  it('uses the OpenAI API endpoint when API key auth is present', async () => {
+    fetchMock.mockResolvedValueOnce(
+      createFetchResponse(createOpenAIResponseBody('Search result body'))
+    );
+
+    const { hooks, tool } = await createEnv({
+      provider: {
+        openai: {
+          options: {
+            websearch_grounded: { model: 'gpt-4o-search-preview' },
+          },
+        },
+      },
+    } as Config);
+
+    await invokeAuthLoader(hooks, 'openai', {
+      type: 'api',
+      key: 'test-api-key',
+    });
+
+    const context = createToolContext();
+
+    const result = await tool.execute({ query: 'openai web search' }, context);
+
+    expect(result).toContain('Search result body');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(typeof url === 'string' ? url : '').toContain(
+      'https://api.openai.com/v1/responses'
+    );
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer test-api-key');
+  });
+
   it('selects the first configured provider in order', async () => {
     fetchMock.mockResolvedValueOnce(
       createFetchResponse(createOpenAIResponseBody('Search result body'))

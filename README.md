@@ -55,6 +55,8 @@ As long as the plugin is enabled and the Gemini API key is configured, any OpenC
    opencode auth login
    ```
 
+   For `openai`, authenticate using your OpenCode OpenAI setup (API key or OAuth). This plugin only reads the stored credentials.
+
 2. Set a `websearch_grounded` model in your `opencode.json` (required).
 
    Provider selection rule: the plugin scans `provider` entries in order and uses the first provider that contains `options.websearch_grounded.model`. To select a provider, put it first.

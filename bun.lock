@@ -5,9 +5,10 @@
     "": {
       "name": "opencode-websearch-gemini-plugin",
       "dependencies": {
-        "@opencode-ai/plugin": "^1.0.125",
+        "@opencode-ai/plugin": "1.0.150",
       },
       "devDependencies": {
+        "@opencode-ai/sdk": "1.0.150",
         "@types/bun": "latest",
         "@typescript-eslint/eslint-plugin": "^8.48.0",
         "eslint": "^9.39.1",
@@ -47,9 +48,9 @@
 
     "@humanwhocodes/retry": ["@humanwhocodes/retry@0.4.3", "", {}, "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ=="],
 
-    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.0.125", "", { "dependencies": { "@opencode-ai/sdk": "1.0.125", "zod": "4.1.8" } }, "sha512-fq7GwDZAjTupLTTW7wzhWDowz7b59Lohg+SITQCkVDOJ+nwK0da1DZxeV0AgrzKPbs9g4xPI4LG2SFdsPz1GdQ=="],
+    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.0.150", "", { "dependencies": { "@opencode-ai/sdk": "1.0.150", "zod": "4.1.8" } }, "sha512-XmY3yydk120GBv2KeLxSZlElFx4Zx9TYLa3bS9X1TxXot42UeoMLEi3Xa46yboYnWwp4bC9Fu+Gd1E7hypG8Jw=="],
 
-    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.0.125", "", {}, "sha512-beVzY/2eYiDYexAvGUe7LKnwaG7g/dm8/AVdtXtKbY2R3chnmBUMbmpVCccMk00BNhdbOxVRo5oeFUjdNykAIQ=="],
+    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.0.150", "", {}, "sha512-Nz9Di8UD/GK01w3N+jpiGNB733pYkNY8RNLbuE/HUxEGSP5apbXBY0IdhbW7859sXZZK38kF1NqOx4UxwBf4Bw=="],
 
     "@types/bun": ["@types/bun@1.3.3", "", { "dependencies": { "bun-types": "1.3.3" } }, "sha512-ogrKbJ2X5N0kWLLFKeytG0eHDleBYtngtlbu9cyBKFtNL3cnpDZkNdQj8flVf6WTZUX5ulI9AY1oa7ljhSrp+g=="],
 

@@ -256,7 +256,12 @@ export const WebsearchGroundedOpenAIPlugin: Plugin = () => {
         registerGetAuth(OPENAI_PROVIDER_ID, getAuth);
         return Promise.resolve({});
       },
-      methods: [],
+      methods: [
+        {
+          type: 'api',
+          label: 'OpenAI API key',
+        },
+      ],
     },
   });
 };

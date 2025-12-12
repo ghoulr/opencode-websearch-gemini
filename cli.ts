@@ -1,9 +1,16 @@
 import os from 'os';
 import path from 'path';
-import type { PluginInput } from '@opencode-ai/plugin';
-import type { Auth as ProviderAuth, Config, Provider } from '@opencode-ai/sdk';
+import type { Hooks as PluginHooks, PluginInput } from '@opencode-ai/plugin';
+
+import type { Auth as ProviderAuth } from '@opencode-ai/sdk';
 
 import type { Plugin as PluginInstance } from '@opencode-ai/plugin';
+
+type SdkConfig = Parameters<NonNullable<PluginHooks['config']>>[0];
+
+type SdkProvider = Parameters<
+  NonNullable<NonNullable<PluginHooks['auth']>['loader']>
+>[1];
 
 type CliArgs = {
   query?: string;
@@ -93,11 +100,11 @@ async function loadConfig(filepath: string): Promise<unknown> {
   return parsed;
 }
 
-function asSdkConfig(root: unknown): Config {
+function asSdkConfig(root: unknown): SdkConfig {
   if (!isRecord(root)) {
     throw new Error('Invalid opencode config: root is not an object');
   }
-  return root as unknown as Config;
+  return root as unknown as SdkConfig;
 }
 
 function parseProviderAuth(entry: unknown, providerID: string): ProviderAuth {
@@ -274,7 +281,7 @@ async function main() {
   const input = createPluginInput();
   const hooks = await initHooks(input);
 
-  const provider = {} as Provider;
+  const provider = {} as SdkProvider;
 
   const googleGetAuth = (() =>
     loadProviderAuth(authPath, 'google')) as unknown as () => Promise<ProviderAuth>;

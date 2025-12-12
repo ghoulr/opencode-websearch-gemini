@@ -27,6 +27,7 @@
     "LICENSE"
   ],
   "devDependencies": {
+    "@opencode-ai/sdk": "1.0.150",
     "@types/bun": "latest",
     "@typescript-eslint/eslint-plugin": "^8.48.0",
     "eslint": "^9.39.1",
@@ -45,6 +46,6 @@
     "test:agent": "AGENT=1 bun test index.test.ts"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "^1.0.125"
+    "@opencode-ai/plugin": "1.0.150"
   }
 }
