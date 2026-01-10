@@ -35,22 +35,19 @@
     "LICENSE"
   ],
   "devDependencies": {
+    "@biomejs/biome": "2.3.11",
     "@opencode-ai/sdk": "1.0.150",
     "@types/bun": "latest",
-    "@typescript-eslint/eslint-plugin": "^8.48.0",
-    "eslint": "^9.39.1",
+    "@typescript/native-preview": "^7.0.0-dev.20260109.1",
     "husky": "^9.1.7",
-    "lint-staged": "^16.2.7",
-    "prettier": "^3.6.2"
+    "lint-staged": "^16.2.7"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "scripts": {
     "prepare": "bunx husky",
-    "lint": "bun eslint .",
-    "typecheck": "bunx tsc --noEmit",
-    "check": "bun run lint && bun run typecheck",
+    "check": "biome check --write && tsgo --noEmit",
     "test:agent": "AGENT=1 bun test --bail",
     "build": "bun build index.ts --outdir dist --target node --format esm --sourcemap --external @opencode-ai/plugin --external @opencode-ai/sdk",
     "prepack": "bun run build"
