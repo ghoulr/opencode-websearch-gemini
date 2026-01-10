@@ -37,7 +37,7 @@ Add `opencode-websearch-cited` to your `~/.config/opencode/opencode.json`.
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
     "...other plugins",
-    "opencode-websearch-cited@1.1.1"
+    "opencode-websearch-cited@1.2.0"
   ]
 }
 ```
@@ -52,9 +52,8 @@ As long as the plugin is enabled and the provider auth is configured, any OpenCo
 
 Log in with `opencode auth login` first.
 
-This plugin is compatible with:
-- [opencode-openai-codex-auth](https://github.com/numman-ali/opencode-openai-codex-auth.git)
-- [opencode-gemini-auth](https://github.com/jenslys/opencode-gemini-auth)
+For google support, this plugin is compatible with:
+- API Key via opencode auth, or
 - [opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth.git)
 
 Set a `websearch_cited` model in your OpenCode config (required)
@@ -73,7 +72,7 @@ Set a `websearch_cited` model in your OpenCode config (required)
     "openai": {
       "options": {
         "websearch_cited": {
-          "model": "gpt-5.1"
+          "model": "gpt-5.2"
         }
       }
     },
