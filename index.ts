@@ -11,7 +11,7 @@ const OPENAI_PROVIDER_ID = 'openai';
 const OPENROUTER_PROVIDER_ID = 'openrouter';
 
 const CITED_SEARCH_TOOL_DESCRIPTION =
-  'Performs a Gemini-style grounded web search: returns a concise digest with inline citations and a Sources list of URLs.';
+  'Performs a Gemini-style grounded web search: returns a concise digest with inline citations and a Sources list of URLs. NOTE: for LLM rate limits, DO NOT parallel this tool >3';
 
 const WEBSEARCH_ARGS = {
   query: tool.schema.string().describe('The natural language web search query.'),
